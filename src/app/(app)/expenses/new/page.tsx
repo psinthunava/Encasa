@@ -48,15 +48,5 @@ export default async function NewExpensePage() {
     })),
   }))
 
-  return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Add expense</h2>
-        <Link href="/expenses" className="text-sm text-indigo-600 hover:underline">
-          ← Back to expenses
-        </Link>
-      </div>
-      <ExpenseForm categories={categoriesForClient} families={families} />
-    </div>
-  )
+  return <ExpenseForm categories={categoriesForClient} families={families} />
 }
