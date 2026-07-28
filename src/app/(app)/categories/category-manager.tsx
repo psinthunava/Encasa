@@ -22,6 +22,7 @@ type Subcategory = {
   archived: boolean
   splitMethod: SplitMethod
   splitConfigs: SplitConfig[]
+  isRecurring: boolean
 }
 type Category = {
   id: string
@@ -165,6 +166,12 @@ export function CategoryManager({ categories, families }: { categories: Category
                           </button>
                         </form>
 
+                        {sub.isRecurring && (
+                          <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                            ↻ Recurring
+                          </span>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => toggleSplit(sub.id)}
@@ -187,6 +194,7 @@ export function CategoryManager({ categories, families }: { categories: Category
                           subcategoryId={sub.id}
                           splitMethod={sub.splitMethod}
                           splitConfigs={sub.splitConfigs}
+                          isRecurring={sub.isRecurring}
                           families={families}
                         />
                       )}

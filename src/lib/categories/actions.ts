@@ -139,6 +139,7 @@ export async function updateSubcategorySplit(
   const splitMethodResult = SplitMethodSchema.safeParse(formData.get('splitMethod'))
   if (!splitMethodResult.success) return { message: 'Invalid split method.' }
   const splitMethod = splitMethodResult.data
+  const isRecurring = formData.get('isRecurring') === 'on'
 
   const families = await prisma.family.findMany({
     where: { householdId: member.family.householdId, archived: false },
@@ -179,7 +180,7 @@ export async function updateSubcategorySplit(
   }
 
   await prisma.$transaction([
-    prisma.subcategory.update({ where: { id: subcategoryId }, data: { splitMethod } }),
+    prisma.subcategory.update({ where: { id: subcategoryId }, data: { splitMethod, isRecurring } }),
     prisma.subcategorySplitConfig.deleteMany({ where: { subcategoryId } }),
     ...(configs.length > 0
       ? [

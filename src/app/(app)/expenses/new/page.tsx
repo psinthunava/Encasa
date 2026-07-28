@@ -19,7 +19,7 @@ export default async function NewExpensePage() {
     )
   }
 
-  const [categories, families] = await Promise.all([
+  const [categories, families, vendors] = await Promise.all([
     prisma.category.findMany({
       where: { householdId: member.family.householdId, archived: false },
       orderBy: { sortOrder: 'asc' },
@@ -35,6 +35,11 @@ export default async function NewExpensePage() {
       where: { householdId: member.family.householdId, archived: false },
       orderBy: { name: 'asc' },
     }),
+    prisma.vendor.findMany({
+      where: { householdId: member.family.householdId },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
   ])
 
   const categoriesForClient = categories.map((c) => ({
@@ -48,5 +53,5 @@ export default async function NewExpensePage() {
     })),
   }))
 
-  return <ExpenseForm categories={categoriesForClient} families={families} />
+  return <ExpenseForm categories={categoriesForClient} families={families} vendors={vendors} />
 }

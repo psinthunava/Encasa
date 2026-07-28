@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
 import { computeSplitsFromSplitConfig } from './split'
+import { ensureVendorSaved } from '@/lib/vendors/actions'
 
 export type ExpenseFormState = { message?: string } | undefined
 
@@ -20,7 +21,6 @@ const ExpenseSchema = z.object({
   paidByFamilyId: z.uuid({ error: 'Select who paid.' }),
   notes: z.string().trim().optional().or(z.literal('')),
   tags: z.string().trim().optional().or(z.literal('')),
-  isRecurring: z.coerce.boolean().default(false),
 })
 
 export async function createExpense(
@@ -43,7 +43,6 @@ export async function createExpense(
     paidByFamilyId: formData.get('paidByFamilyId'),
     notes: formData.get('notes') || '',
     tags: formData.get('tags') || '',
-    isRecurring: formData.get('isRecurring') === 'on',
   })
 
   if (!validated.success) {
@@ -76,8 +75,9 @@ export async function createExpense(
     return { message: 'Subcategory not found.' }
   }
 
-  // No subcategory chosen (or the subcategory has no config saved) -> split evenly.
+  // No subcategory chosen (or the subcategory has no config saved) -> split evenly, not recurring.
   const splitMethod = subcategory?.splitMethod ?? 'EQUAL'
+  const isRecurring = subcategory?.isRecurring ?? false
   const splitConfigs = (subcategory?.splitConfigs ?? []).map((c) => ({
     familyId: c.familyId,
     inputValue: c.inputValue === null ? null : Number(c.inputValue),
@@ -89,6 +89,10 @@ export async function createExpense(
     families.map((f) => f.id),
     total
   )
+
+  if (data.vendor) {
+    await ensureVendorSaved(member.family.householdId, data.vendor)
+  }
 
   await prisma.expense.create({
     data: {
@@ -106,7 +110,7 @@ export async function createExpense(
       tags: data.tags
         ? data.tags.split(',').map((t) => t.trim()).filter(Boolean)
         : [],
-      isRecurring: data.isRecurring,
+      isRecurring,
       splitMethod,
       createdById: member.id,
       splits: {

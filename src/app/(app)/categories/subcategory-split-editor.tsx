@@ -14,11 +14,13 @@ export function SubcategorySplitEditor({
   subcategoryId,
   splitMethod: initialMethod,
   splitConfigs,
+  isRecurring,
   families,
 }: {
   subcategoryId: string
   splitMethod: SplitMethod
   splitConfigs: SplitConfig[]
+  isRecurring: boolean
   families: Family[]
 }) {
   const action = updateSubcategorySplit.bind(null, subcategoryId)
@@ -137,6 +139,16 @@ export function SubcategorySplitEditor({
         </div>
       )}
 
+      <label className="flex items-center gap-2 border-t border-slate-200 dark:border-slate-700 pt-3 text-xs text-slate-700 dark:text-slate-300">
+        <input
+          type="checkbox"
+          name="isRecurring"
+          defaultChecked={isRecurring}
+          className="rounded border-slate-300 dark:border-slate-700"
+        />
+        Expenses in this subcategory are recurring (e.g. rent, subscriptions)
+      </label>
+
       {state?.message && <p className="text-xs text-red-600">{state.message}</p>}
 
       <button
@@ -144,7 +156,7 @@ export function SubcategorySplitEditor({
         disabled={pending}
         className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
       >
-        {pending ? 'Saving…' : 'Save split settings'}
+        {pending ? 'Saving…' : 'Save settings'}
       </button>
     </form>
   )
