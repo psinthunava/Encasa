@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
-import { computeSplitsFromCategoryConfig } from './split'
+import { computeSplitsFromSplitConfig } from './split'
 
 export type ExpenseFormState = { message?: string } | undefined
 
@@ -53,11 +53,16 @@ export async function createExpense(
   const data = validated.data
   const total = Math.round((data.amount + data.tax) * 100) / 100
 
-  const [category, families] = await Promise.all([
+  const [category, subcategory, families] = await Promise.all([
     prisma.category.findFirst({
       where: { id: data.categoryId, householdId: member.family.householdId },
-      include: { splitConfigs: true },
     }),
+    data.subcategoryId
+      ? prisma.subcategory.findFirst({
+          where: { id: data.subcategoryId, categoryId: data.categoryId },
+          include: { splitConfigs: true },
+        })
+      : Promise.resolve(null),
     prisma.family.findMany({
       where: { householdId: member.family.householdId, archived: false },
       select: { id: true },
@@ -67,13 +72,20 @@ export async function createExpense(
   if (!category) {
     return { message: 'Category not found.' }
   }
+  if (data.subcategoryId && !subcategory) {
+    return { message: 'Subcategory not found.' }
+  }
 
-  const splits = computeSplitsFromCategoryConfig(
-    category.splitMethod,
-    category.splitConfigs.map((c) => ({
-      familyId: c.familyId,
-      inputValue: c.inputValue === null ? null : Number(c.inputValue),
-    })),
+  // No subcategory chosen (or the subcategory has no config saved) -> split evenly.
+  const splitMethod = subcategory?.splitMethod ?? 'EQUAL'
+  const splitConfigs = (subcategory?.splitConfigs ?? []).map((c) => ({
+    familyId: c.familyId,
+    inputValue: c.inputValue === null ? null : Number(c.inputValue),
+  }))
+
+  const splits = computeSplitsFromSplitConfig(
+    splitMethod,
+    splitConfigs,
     families.map((f) => f.id),
     total
   )
@@ -95,7 +107,7 @@ export async function createExpense(
         ? data.tags.split(',').map((t) => t.trim()).filter(Boolean)
         : [],
       isRecurring: data.isRecurring,
-      splitMethod: category.splitMethod,
+      splitMethod,
       createdById: member.id,
       splits: {
         create: splits.map((s) => ({

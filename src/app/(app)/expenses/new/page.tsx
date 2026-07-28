@@ -24,8 +24,11 @@ export default async function NewExpensePage() {
       where: { householdId: member.family.householdId, archived: false },
       orderBy: { sortOrder: 'asc' },
       include: {
-        subcategories: { where: { archived: false }, orderBy: { sortOrder: 'asc' } },
-        splitConfigs: true,
+        subcategories: {
+          where: { archived: false },
+          orderBy: { sortOrder: 'asc' },
+          include: { splitConfigs: true },
+        },
       },
     }),
     prisma.family.findMany({
@@ -36,9 +39,12 @@ export default async function NewExpensePage() {
 
   const categoriesForClient = categories.map((c) => ({
     ...c,
-    splitConfigs: c.splitConfigs.map((sc) => ({
-      familyId: sc.familyId,
-      inputValue: sc.inputValue === null ? null : Number(sc.inputValue),
+    subcategories: c.subcategories.map((s) => ({
+      ...s,
+      splitConfigs: s.splitConfigs.map((sc) => ({
+        familyId: sc.familyId,
+        inputValue: sc.inputValue === null ? null : Number(sc.inputValue),
+      })),
     })),
   }))
 

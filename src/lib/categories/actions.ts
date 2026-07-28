@@ -124,17 +124,17 @@ export type UpdateSplitState = { message?: string } | undefined
 
 const SplitMethodSchema = z.enum(['EQUAL', 'PERCENTAGE', 'FIXED', 'CUSTOM'])
 
-export async function updateCategorySplit(
-  categoryId: string,
+export async function updateSubcategorySplit(
+  subcategoryId: string,
   _prevState: UpdateSplitState,
   formData: FormData
 ): Promise<UpdateSplitState> {
   const member = await requireAdmin()
 
-  const category = await prisma.category.findFirst({
-    where: { id: categoryId, householdId: member.family.householdId },
+  const subcategory = await prisma.subcategory.findFirst({
+    where: { id: subcategoryId, category: { householdId: member.family.householdId } },
   })
-  if (!category) return { message: 'Category not found.' }
+  if (!subcategory) return { message: 'Subcategory not found.' }
 
   const splitMethodResult = SplitMethodSchema.safeParse(formData.get('splitMethod'))
   if (!splitMethodResult.success) return { message: 'Invalid split method.' }
@@ -179,13 +179,13 @@ export async function updateCategorySplit(
   }
 
   await prisma.$transaction([
-    prisma.category.update({ where: { id: categoryId }, data: { splitMethod } }),
-    prisma.categorySplitConfig.deleteMany({ where: { categoryId } }),
+    prisma.subcategory.update({ where: { id: subcategoryId }, data: { splitMethod } }),
+    prisma.subcategorySplitConfig.deleteMany({ where: { subcategoryId } }),
     ...(configs.length > 0
       ? [
-          prisma.categorySplitConfig.createMany({
+          prisma.subcategorySplitConfig.createMany({
             data: configs.map((c) => ({
-              categoryId,
+              subcategoryId,
               familyId: c.familyId,
               inputValue: c.inputValue,
             })),

@@ -94,11 +94,11 @@ export function sumOwed(splits: SplitResult[]): number {
   return Math.round(splits.reduce((sum, s) => sum + s.amountOwed, 0) * 100) / 100
 }
 
-// Computes an expense's splits from its category's stored default split
-// configuration. This is the single place expense creation (and, later,
-// recurring expense generation) should call so the category's rule is
-// always applied consistently.
-export function computeSplitsFromCategoryConfig(
+// Computes an expense's splits from its subcategory's stored default split
+// configuration (or EQUAL if there is no subcategory / no config saved yet).
+// This is the single place expense creation (and, later, recurring expense
+// generation) should call so the subcategory's rule is always applied consistently.
+export function computeSplitsFromSplitConfig(
   splitMethod: SplitMethod,
   splitConfigs: { familyId: string; inputValue: number | null }[],
   familyIds: string[],

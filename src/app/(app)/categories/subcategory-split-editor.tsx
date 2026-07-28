@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { updateCategorySplit, type UpdateSplitState } from '@/lib/categories/actions'
+import { updateSubcategorySplit, type UpdateSplitState } from '@/lib/categories/actions'
 
 type Family = { id: string; name: string }
 type SplitConfig = { familyId: string; inputValue: number | null }
@@ -10,18 +10,18 @@ type SplitMethod = 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
 const inputClass =
   'rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
-export function CategorySplitEditor({
-  categoryId,
+export function SubcategorySplitEditor({
+  subcategoryId,
   splitMethod: initialMethod,
   splitConfigs,
   families,
 }: {
-  categoryId: string
+  subcategoryId: string
   splitMethod: SplitMethod
   splitConfigs: SplitConfig[]
   families: Family[]
 }) {
-  const action = updateCategorySplit.bind(null, categoryId)
+  const action = updateSubcategorySplit.bind(null, subcategoryId)
   const [state, formAction, pending] = useActionState<UpdateSplitState, FormData>(action, undefined)
   const [method, setMethod] = useState<SplitMethod>(initialMethod)
 
@@ -30,7 +30,7 @@ export function CategorySplitEditor({
   return (
     <form action={formAction} className="space-y-3 rounded-md bg-slate-50 dark:bg-slate-800/50 p-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        Default split for expenses in this category
+        Default split for expenses in this subcategory
       </p>
 
       <div className="flex flex-wrap gap-2">

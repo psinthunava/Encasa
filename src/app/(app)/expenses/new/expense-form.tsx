@@ -2,15 +2,19 @@
 
 import { useActionState, useMemo, useState } from 'react'
 import { createExpense, type ExpenseFormState } from '@/lib/expenses/actions'
-import { computeSplitsFromCategoryConfig } from '@/lib/expenses/split'
+import { computeSplitsFromSplitConfig } from '@/lib/expenses/split'
 
-type Subcategory = { id: string; name: string }
+type SplitMethod = 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
 type SplitConfig = { familyId: string; inputValue: number | null }
+type Subcategory = {
+  id: string
+  name: string
+  splitMethod: SplitMethod
+  splitConfigs: SplitConfig[]
+}
 type Category = {
   id: string
   name: string
-  splitMethod: 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
-  splitConfigs: SplitConfig[]
   subcategories: Subcategory[]
 }
 type Family = { id: string; name: string }
@@ -19,7 +23,7 @@ const inputClass =
   'mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 const labelClass = 'block text-sm font-medium text-slate-700 dark:text-slate-300'
 
-const splitMethodLabel: Record<Category['splitMethod'], string> = {
+const splitMethodLabel: Record<SplitMethod, string> = {
   EQUAL: 'Equal',
   PERCENTAGE: 'Percentage',
   FIXED: 'Fixed + remainder',
@@ -38,22 +42,27 @@ export function ExpenseForm({
     undefined
   )
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '')
+  const [subcategoryId, setSubcategoryId] = useState('')
   const [amount, setAmount] = useState(0)
   const [tax, setTax] = useState(0)
 
   const category = useMemo(() => categories.find((c) => c.id === categoryId), [categories, categoryId])
   const subcategories = category?.subcategories ?? []
+  const subcategory = useMemo(
+    () => subcategories.find((s) => s.id === subcategoryId),
+    [subcategories, subcategoryId]
+  )
   const total = Math.round((amount + tax) * 100) / 100
 
+  const splitMethod = subcategory?.splitMethod ?? 'EQUAL'
   const splitPreview = useMemo(() => {
-    if (!category) return []
-    return computeSplitsFromCategoryConfig(
-      category.splitMethod,
-      category.splitConfigs,
+    return computeSplitsFromSplitConfig(
+      splitMethod,
+      subcategory?.splitConfigs ?? [],
       families.map((f) => f.id),
       total || 0
     )
-  }, [category, families, total])
+  }, [splitMethod, subcategory, families, total])
 
   return (
     <form action={action} className="space-y-6 max-w-2xl">
@@ -98,7 +107,10 @@ export function ExpenseForm({
             name="categoryId"
             required
             value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
+            onChange={(e) => {
+              setCategoryId(e.target.value)
+              setSubcategoryId('')
+            }}
             className={inputClass}
           >
             {categories.map((c) => (
@@ -112,7 +124,13 @@ export function ExpenseForm({
           <label htmlFor="subcategoryId" className={labelClass}>
             Subcategory (optional)
           </label>
-          <select id="subcategoryId" name="subcategoryId" defaultValue="" className={inputClass}>
+          <select
+            id="subcategoryId"
+            name="subcategoryId"
+            value={subcategoryId}
+            onChange={(e) => setSubcategoryId(e.target.value)}
+            className={inputClass}
+          >
             <option value="">None</option>
             {subcategories.map((s) => (
               <option key={s.id} value={s.id}>
@@ -199,9 +217,11 @@ export function ExpenseForm({
 
       <div className="rounded-md bg-slate-50 dark:bg-slate-800/50 p-3">
         <p className="text-sm text-slate-700 dark:text-slate-300">
-          Split: <span className="font-medium">{category ? splitMethodLabel[category.splitMethod] : '—'}</span>{' '}
+          Split: <span className="font-medium">{splitMethodLabel[splitMethod]}</span>{' '}
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            (set on the category — edit it from the Categories page)
+            {subcategory
+              ? '(set on the subcategory — edit it from the Categories page)'
+              : '(no subcategory selected, so this splits equally)'}
           </span>
         </p>
         {total > 0 && (
