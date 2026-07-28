@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useActionState } from 'react'
 import Link from 'next/link'
-import { createExpense, type ExpenseFormState } from '@/lib/expenses/actions'
+import type { ExpenseFormState } from '@/lib/expenses/actions'
 import { VendorCombobox } from './vendor-combobox'
 
 type SplitMethod = 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
@@ -21,6 +21,19 @@ type Category = {
 type Family = { id: string; name: string }
 type Vendor = { id: string; name: string }
 
+export type ExpenseInitialValues = {
+  date: string
+  categoryId: string
+  subcategoryId: string
+  description: string
+  vendor: string
+  tags: string
+  amount: number
+  tax: number
+  notes: string
+  paidByFamilyId: string
+}
+
 const inputClass =
   'mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 const labelClass = 'block text-sm font-medium text-slate-700 dark:text-slate-300'
@@ -38,21 +51,26 @@ export function ExpenseForm({
   categories,
   families,
   vendors,
+  action,
+  initialValues,
+  title,
+  submitLabel,
 }: {
   categories: Category[]
   families: Family[]
   vendors: Vendor[]
+  action: (state: ExpenseFormState, formData: FormData) => Promise<ExpenseFormState>
+  initialValues?: ExpenseInitialValues
+  title: string
+  submitLabel: string
 }) {
-  const [state, action, pending] = useActionState<ExpenseFormState, FormData>(
-    createExpense,
-    undefined
-  )
+  const [state, formAction, pending] = useActionState<ExpenseFormState, FormData>(action, undefined)
   const formRef = useRef<HTMLFormElement>(null)
-  const [categoryId, setCategoryId] = useState(defaultCategoryId(categories))
-  const [subcategoryId, setSubcategoryId] = useState('')
-  const [amount, setAmount] = useState(0)
-  const [tax, setTax] = useState(0)
-  const [vendor, setVendor] = useState('')
+  const [categoryId, setCategoryId] = useState(initialValues?.categoryId ?? defaultCategoryId(categories))
+  const [subcategoryId, setSubcategoryId] = useState(initialValues?.subcategoryId ?? '')
+  const [amount, setAmount] = useState(initialValues?.amount ?? 0)
+  const [tax, setTax] = useState(initialValues?.tax ?? 0)
+  const [vendor, setVendor] = useState(initialValues?.vendor ?? '')
 
   const category = useMemo(() => categories.find((c) => c.id === categoryId), [categories, categoryId])
   const subcategories = category?.subcategories ?? []
@@ -75,7 +93,7 @@ export function ExpenseForm({
     <div className="max-w-2xl">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Add expense</h2>
+          <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
           <Link href="/expenses" className="text-sm text-indigo-600 hover:underline">
             ← Back to expenses
           </Link>
@@ -87,7 +105,7 @@ export function ExpenseForm({
         )}
       </div>
 
-      <form ref={formRef} action={action} className="space-y-6">
+      <form ref={formRef} action={formAction} className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label htmlFor="date" className={labelClass}>
@@ -98,7 +116,7 @@ export function ExpenseForm({
               name="date"
               type="date"
               required
-              defaultValue={new Date().toISOString().slice(0, 10)}
+              defaultValue={initialValues?.date ?? new Date().toISOString().slice(0, 10)}
               className={inputClass}
             />
           </div>
@@ -106,7 +124,13 @@ export function ExpenseForm({
             <label htmlFor="paidByFamilyId" className={labelClass}>
               Who paid
             </label>
-            <select id="paidByFamilyId" name="paidByFamilyId" required defaultValue="" className={inputClass}>
+            <select
+              id="paidByFamilyId"
+              name="paidByFamilyId"
+              required
+              defaultValue={initialValues?.paidByFamilyId ?? ''}
+              className={inputClass}
+            >
               <option value="" disabled>
                 Select family
               </option>
@@ -167,7 +191,14 @@ export function ExpenseForm({
           <label htmlFor="description" className={labelClass}>
             Description
           </label>
-          <input id="description" name="description" type="text" required className={inputClass} />
+          <input
+            id="description"
+            name="description"
+            type="text"
+            required
+            defaultValue={initialValues?.description ?? ''}
+            className={inputClass}
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -176,7 +207,14 @@ export function ExpenseForm({
             <label htmlFor="tags" className={labelClass}>
               Tags (comma separated, optional)
             </label>
-            <input id="tags" name="tags" type="text" placeholder="e.g. urgent, shared" className={inputClass} />
+            <input
+              id="tags"
+              name="tags"
+              type="text"
+              placeholder="e.g. urgent, shared"
+              defaultValue={initialValues?.tags ?? ''}
+              className={inputClass}
+            />
           </div>
         </div>
 
@@ -224,7 +262,7 @@ export function ExpenseForm({
           <label htmlFor="notes" className={labelClass}>
             Notes (optional)
           </label>
-          <textarea id="notes" name="notes" rows={2} className={inputClass} />
+          <textarea id="notes" name="notes" rows={2} defaultValue={initialValues?.notes ?? ''} className={inputClass} />
         </div>
 
         {state?.message && <p className="text-sm text-red-600">{state.message}</p>}
@@ -242,7 +280,7 @@ export function ExpenseForm({
             disabled={pending}
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
           >
-            {pending ? 'Saving…' : 'Save expense'}
+            {pending ? 'Saving…' : submitLabel}
           </button>
         </div>
       </form>

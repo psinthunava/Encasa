@@ -15,7 +15,7 @@ export function VoidButton({ expenseId }: { expenseId: string }) {
           startTransition(() => voidExpense(expenseId))
         }
       }}
-      className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+      className="text-xs font-medium text-yellow-600 dark:text-yellow-500 hover:underline disabled:opacity-50"
     >
       Void
     </button>

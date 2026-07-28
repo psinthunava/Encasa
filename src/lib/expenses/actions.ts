@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
+import type { Member } from '@prisma/client'
 import { computeSplitsFromSplitConfig } from './split'
 import { ensureVendorSaved } from '@/lib/vendors/actions'
 
@@ -23,15 +24,11 @@ const ExpenseSchema = z.object({
   tags: z.string().trim().optional().or(z.literal('')),
 })
 
-export async function createExpense(
-  _prevState: ExpenseFormState,
-  formData: FormData
-): Promise<ExpenseFormState> {
-  const member = await requireMember()
-  if (member.role !== 'ADMIN' && !member.canAddExpenses) {
-    return { message: 'You do not have permission to add expenses.' }
-  }
+type MemberWithFamily = Member & { family: { householdId: string } }
 
+// Shared by create/update: validates the form, derives the split from the
+// chosen subcategory (or EQUAL if none), and auto-saves any new vendor name.
+async function prepareExpenseWrite(member: MemberWithFamily, formData: FormData) {
   const validated = ExpenseSchema.safeParse({
     date: formData.get('date'),
     categoryId: formData.get('categoryId'),
@@ -46,7 +43,9 @@ export async function createExpense(
   })
 
   if (!validated.success) {
-    return { message: z.flattenError(validated.error).formErrors.join(' ') || 'Please check the form for errors.' }
+    return {
+      error: z.flattenError(validated.error).formErrors.join(' ') || 'Please check the form for errors.',
+    } as const
   }
 
   const data = validated.data
@@ -68,12 +67,8 @@ export async function createExpense(
     }),
   ])
 
-  if (!category) {
-    return { message: 'Category not found.' }
-  }
-  if (data.subcategoryId && !subcategory) {
-    return { message: 'Subcategory not found.' }
-  }
+  if (!category) return { error: 'Category not found.' } as const
+  if (data.subcategoryId && !subcategory) return { error: 'Subcategory not found.' } as const
 
   // No subcategory chosen (or the subcategory has no config saved) -> split evenly, not recurring.
   const splitMethod = subcategory?.splitMethod ?? 'EQUAL'
@@ -94,8 +89,8 @@ export async function createExpense(
     await ensureVendorSaved(member.family.householdId, data.vendor)
   }
 
-  await prisma.expense.create({
-    data: {
+  return {
+    fields: {
       householdId: member.family.householdId,
       date: new Date(data.date),
       categoryId: data.categoryId,
@@ -107,14 +102,32 @@ export async function createExpense(
       total,
       paidByFamilyId: data.paidByFamilyId,
       notes: data.notes || null,
-      tags: data.tags
-        ? data.tags.split(',').map((t) => t.trim()).filter(Boolean)
-        : [],
+      tags: data.tags ? data.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       isRecurring,
       splitMethod,
+    },
+    splits,
+  } as const
+}
+
+export async function createExpense(
+  _prevState: ExpenseFormState,
+  formData: FormData
+): Promise<ExpenseFormState> {
+  const member = await requireMember()
+  if (member.role !== 'ADMIN' && !member.canAddExpenses) {
+    return { message: 'You do not have permission to add expenses.' }
+  }
+
+  const result = await prepareExpenseWrite(member, formData)
+  if ('error' in result) return { message: result.error }
+
+  await prisma.expense.create({
+    data: {
+      ...result.fields,
       createdById: member.id,
       splits: {
-        create: splits.map((s) => ({
+        create: result.splits.map((s) => ({
           familyId: s.familyId,
           inputValue: s.inputValue,
           amountOwed: s.amountOwed,
@@ -122,6 +135,41 @@ export async function createExpense(
       },
     },
   })
+
+  revalidatePath('/expenses')
+  revalidatePath('/')
+  redirect('/expenses')
+}
+
+export async function updateExpense(
+  expenseId: string,
+  _prevState: ExpenseFormState,
+  formData: FormData
+): Promise<ExpenseFormState> {
+  const member = await requireMember()
+
+  const existing = await prisma.expense.findFirst({
+    where: { id: expenseId, householdId: member.family.householdId },
+  })
+  if (!existing) return { message: 'Expense not found.' }
+  const canEdit = member.role === 'ADMIN' || (existing.createdById === member.id && member.canAddExpenses)
+  if (!canEdit) return { message: 'You do not have permission to edit this expense.' }
+
+  const result = await prepareExpenseWrite(member, formData)
+  if ('error' in result) return { message: result.error }
+
+  await prisma.$transaction([
+    prisma.expense.update({ where: { id: expenseId }, data: result.fields }),
+    prisma.expenseSplit.deleteMany({ where: { expenseId } }),
+    prisma.expenseSplit.createMany({
+      data: result.splits.map((s) => ({
+        expenseId,
+        familyId: s.familyId,
+        inputValue: s.inputValue,
+        amountOwed: s.amountOwed,
+      })),
+    }),
+  ])
 
   revalidatePath('/expenses')
   revalidatePath('/')
@@ -137,6 +185,19 @@ export async function voidExpense(expenseId: string) {
   if (member.role !== 'ADMIN' && expense.createdById !== member.id) return
 
   await prisma.expense.update({ where: { id: expenseId }, data: { status: 'VOID' } })
+  revalidatePath('/expenses')
+  revalidatePath('/')
+}
+
+// Permanent removal (unlike Void, which keeps the record for history).
+// Restricted to admins since it can't be undone.
+export async function deleteExpense(expenseId: string) {
+  const member = await requireMember()
+  if (member.role !== 'ADMIN') return
+
+  await prisma.expense.deleteMany({
+    where: { id: expenseId, householdId: member.family.householdId },
+  })
   revalidatePath('/expenses')
   revalidatePath('/')
 }

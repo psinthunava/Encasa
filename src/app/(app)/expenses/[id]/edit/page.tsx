@@ -1,17 +1,25 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
-import { createExpense } from '@/lib/expenses/actions'
-import { ExpenseForm } from '../expense-form'
+import { updateExpense } from '@/lib/expenses/actions'
+import { ExpenseForm } from '../../expense-form'
 
-export default async function NewExpensePage() {
+export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const member = await requireMember()
 
-  if (member.role !== 'ADMIN' && !member.canAddExpenses) {
+  const expense = await prisma.expense.findFirst({
+    where: { id, householdId: member.family.householdId },
+  })
+  if (!expense) notFound()
+
+  const canEdit = member.role === 'ADMIN' || (expense.createdById === member.id && member.canAddExpenses)
+  if (!canEdit) {
     return (
       <div>
         <p className="text-slate-600 dark:text-slate-400">
-          You don&apos;t have permission to add expenses. Ask your administrator to enable it for your account.
+          You don&apos;t have permission to edit this expense.
         </p>
         <Link href="/expenses" className="text-indigo-600 hover:underline text-sm">
           Back to expenses
@@ -59,9 +67,21 @@ export default async function NewExpensePage() {
       categories={categoriesForClient}
       families={families}
       vendors={vendors}
-      action={createExpense}
-      title="Add expense"
-      submitLabel="Save expense"
+      action={updateExpense.bind(null, expense.id)}
+      title="Edit expense"
+      submitLabel="Save changes"
+      initialValues={{
+        date: expense.date.toISOString().slice(0, 10),
+        categoryId: expense.categoryId,
+        subcategoryId: expense.subcategoryId ?? '',
+        description: expense.description,
+        vendor: expense.vendor ?? '',
+        tags: expense.tags.join(', '),
+        amount: Number(expense.amount),
+        tax: Number(expense.tax),
+        notes: expense.notes ?? '',
+        paidByFamilyId: expense.paidByFamilyId,
+      }}
     />
   )
 }

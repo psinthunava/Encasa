@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
 import { VoidButton } from './void-button'
+import { DeleteButton } from './delete-button'
 
 export default async function ExpensesPage() {
   const member = await requireMember()
@@ -81,10 +82,23 @@ export default async function ExpensesPage() {
                     {e.splits.map((s) => `${s.family.name} $${Number(s.amountOwed).toFixed(2)}`).join(', ')}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    {e.status === 'ACTIVE' &&
-                      (member.role === 'ADMIN' || e.createdById === member.id) && (
-                        <VoidButton expenseId={e.id} />
-                      )}
+                    <div className="flex items-center justify-end gap-3">
+                      {e.status === 'ACTIVE' &&
+                        (member.role === 'ADMIN' || e.createdById === member.id) && (
+                          <VoidButton expenseId={e.id} />
+                        )}
+                      {e.status === 'ACTIVE' &&
+                        (member.role === 'ADMIN' ||
+                          (e.createdById === member.id && member.canAddExpenses)) && (
+                          <Link
+                            href={`/expenses/${e.id}/edit`}
+                            className="text-xs font-medium text-green-600 dark:text-green-500 hover:underline"
+                          >
+                            Edit
+                          </Link>
+                        )}
+                      {member.role === 'ADMIN' && <DeleteButton expenseId={e.id} />}
+                    </div>
                   </td>
                 </tr>
               ))}
