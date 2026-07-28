@@ -16,7 +16,7 @@ export const getCurrentMember = cache(async () => {
 
   const member = await prisma.member.findUnique({
     where: { id: user.id },
-    include: { family: true },
+    include: { family: { include: { household: true } } },
   })
 
   return member

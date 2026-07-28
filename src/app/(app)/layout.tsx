@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              Sinthunava &amp; Junya Household
+              {member.family.household.name}
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               {member.name} · {member.family.name} family ·{' '}

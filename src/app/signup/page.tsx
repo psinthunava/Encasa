@@ -2,11 +2,14 @@ import { prisma } from '@/lib/prisma'
 import { SignupForm } from './signup-form'
 
 export default async function SignupPage() {
-  const families = await prisma.family.findMany({
-    where: { archived: false },
-    orderBy: { name: 'asc' },
-    select: { id: true, name: true },
-  })
+  const [families, household] = await Promise.all([
+    prisma.family.findMany({
+      where: { archived: false },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
+    prisma.household.findFirst({ select: { name: true } }),
+  ])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-12">
@@ -16,7 +19,7 @@ export default async function SignupPage() {
             Create your account
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Join the Sinthunava &amp; Junya household
+            Join {household?.name ?? 'the household'}
           </p>
         </div>
         <SignupForm families={families} />

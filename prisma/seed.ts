@@ -40,7 +40,7 @@ async function main() {
 
   const household = await prisma.household.create({
     data: {
-      name: 'Sinthunava & Junya Household',
+      name: 'Encasa Household Expenses',
       families: {
         create: [{ name: 'Sinthunava' }, { name: 'Junya' }],
       },
