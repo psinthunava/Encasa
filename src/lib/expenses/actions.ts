@@ -5,14 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
-import {
-  computeEqualSplit,
-  computeFixedSplit,
-  computePercentageSplit,
-  computeCustomSplit,
-  sumOwed,
-  type SplitResult,
-} from './split'
+import { computeSplitsFromCategoryConfig } from './split'
 
 export type ExpenseFormState = { message?: string } | undefined
 
@@ -28,7 +21,6 @@ const ExpenseSchema = z.object({
   notes: z.string().trim().optional().or(z.literal('')),
   tags: z.string().trim().optional().or(z.literal('')),
   isRecurring: z.coerce.boolean().default(false),
-  splitMethod: z.enum(['EQUAL', 'PERCENTAGE', 'FIXED', 'CUSTOM']),
 })
 
 export async function createExpense(
@@ -52,7 +44,6 @@ export async function createExpense(
     notes: formData.get('notes') || '',
     tags: formData.get('tags') || '',
     isRecurring: formData.get('isRecurring') === 'on',
-    splitMethod: formData.get('splitMethod'),
   })
 
   if (!validated.success) {
@@ -62,47 +53,30 @@ export async function createExpense(
   const data = validated.data
   const total = Math.round((data.amount + data.tax) * 100) / 100
 
-  const families = await prisma.family.findMany({
-    where: { householdId: member.family.householdId, archived: false },
-    select: { id: true },
-  })
-  const familyIds = families.map((f) => f.id)
+  const [category, families] = await Promise.all([
+    prisma.category.findFirst({
+      where: { id: data.categoryId, householdId: member.family.householdId },
+      include: { splitConfigs: true },
+    }),
+    prisma.family.findMany({
+      where: { householdId: member.family.householdId, archived: false },
+      select: { id: true },
+    }),
+  ])
 
-  let splits: SplitResult[]
-
-  if (data.splitMethod === 'EQUAL') {
-    splits = computeEqualSplit(total, familyIds)
-  } else if (data.splitMethod === 'PERCENTAGE') {
-    const entries = familyIds.map((familyId) => ({
-      familyId,
-      percent: Number(formData.get(`split_${familyId}`)) || 0,
-    }))
-    const percentSum = entries.reduce((s, e) => s + e.percent, 0)
-    if (Math.round(percentSum) !== 100) {
-      return { message: `Percentages must add up to 100 (currently ${percentSum}).` }
-    }
-    splits = computePercentageSplit(total, entries)
-  } else if (data.splitMethod === 'FIXED') {
-    const entries = familyIds.map((familyId) => ({
-      familyId,
-      amount: Number(formData.get(`split_${familyId}`)) || 0,
-    }))
-    splits = computeFixedSplit(entries)
-    if (Math.abs(sumOwed(splits) - total) > 0.01) {
-      return {
-        message: `Fixed amounts must add up to the total ($${total.toFixed(2)}). Currently $${sumOwed(splits).toFixed(2)}.`,
-      }
-    }
-  } else {
-    const entries = familyIds.map((familyId) => ({
-      familyId,
-      weight: Number(formData.get(`split_${familyId}`)) || 0,
-    }))
-    if (entries.every((e) => e.weight <= 0)) {
-      return { message: 'Enter at least one positive share value.' }
-    }
-    splits = computeCustomSplit(total, entries)
+  if (!category) {
+    return { message: 'Category not found.' }
   }
+
+  const splits = computeSplitsFromCategoryConfig(
+    category.splitMethod,
+    category.splitConfigs.map((c) => ({
+      familyId: c.familyId,
+      inputValue: c.inputValue === null ? null : Number(c.inputValue),
+    })),
+    families.map((f) => f.id),
+    total
+  )
 
   await prisma.expense.create({
     data: {
@@ -121,7 +95,7 @@ export async function createExpense(
         ? data.tags.split(',').map((t) => t.trim()).filter(Boolean)
         : [],
       isRecurring: data.isRecurring,
-      splitMethod: data.splitMethod,
+      splitMethod: category.splitMethod,
       createdById: member.id,
       splits: {
         create: splits.map((s) => ({

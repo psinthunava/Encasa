@@ -119,3 +119,81 @@ export async function unarchiveSubcategory(subcategoryId: string) {
   await prisma.subcategory.update({ where: { id: subcategoryId }, data: { archived: false } })
   revalidatePath('/categories')
 }
+
+export type UpdateSplitState = { message?: string } | undefined
+
+const SplitMethodSchema = z.enum(['EQUAL', 'PERCENTAGE', 'FIXED', 'CUSTOM'])
+
+export async function updateCategorySplit(
+  categoryId: string,
+  _prevState: UpdateSplitState,
+  formData: FormData
+): Promise<UpdateSplitState> {
+  const member = await requireAdmin()
+
+  const category = await prisma.category.findFirst({
+    where: { id: categoryId, householdId: member.family.householdId },
+  })
+  if (!category) return { message: 'Category not found.' }
+
+  const splitMethodResult = SplitMethodSchema.safeParse(formData.get('splitMethod'))
+  if (!splitMethodResult.success) return { message: 'Invalid split method.' }
+  const splitMethod = splitMethodResult.data
+
+  const families = await prisma.family.findMany({
+    where: { householdId: member.family.householdId, archived: false },
+    select: { id: true },
+  })
+
+  let configs: { familyId: string; inputValue: number | null }[] = []
+
+  if (splitMethod === 'PERCENTAGE') {
+    configs = families.map((f) => ({
+      familyId: f.id,
+      inputValue: Number(formData.get(`split_${f.id}`)) || 0,
+    }))
+    const sum = configs.reduce((s, c) => s + (c.inputValue ?? 0), 0)
+    if (Math.round(sum) !== 100) {
+      return { message: `Percentages must add up to 100 (currently ${sum}).` }
+    }
+  } else if (splitMethod === 'FIXED') {
+    configs = families.map((f) => {
+      const isRemainder = formData.get(`remainder_${f.id}`) === 'on'
+      return {
+        familyId: f.id,
+        inputValue: isRemainder ? null : Number(formData.get(`split_${f.id}`)) || 0,
+      }
+    })
+    const remainderCount = configs.filter((c) => c.inputValue === null).length
+    if (remainderCount !== 1) {
+      return { message: 'Exactly one family must be marked "remaining balance" for a fixed split.' }
+    }
+  } else if (splitMethod === 'CUSTOM') {
+    configs = families.map((f) => ({
+      familyId: f.id,
+      inputValue: Number(formData.get(`split_${f.id}`)) || 0,
+    }))
+    if (configs.every((c) => (c.inputValue ?? 0) <= 0)) {
+      return { message: 'Enter at least one positive share value.' }
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.category.update({ where: { id: categoryId }, data: { splitMethod } }),
+    prisma.categorySplitConfig.deleteMany({ where: { categoryId } }),
+    ...(configs.length > 0
+      ? [
+          prisma.categorySplitConfig.createMany({
+            data: configs.map((c) => ({
+              categoryId,
+              familyId: c.familyId,
+              inputValue: c.inputValue,
+            })),
+          }),
+        ]
+      : []),
+  ])
+
+  revalidatePath('/categories')
+  revalidatePath('/expenses/new')
+}

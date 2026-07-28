@@ -2,14 +2,29 @@
 
 import { useActionState, useMemo, useState } from 'react'
 import { createExpense, type ExpenseFormState } from '@/lib/expenses/actions'
+import { computeSplitsFromCategoryConfig } from '@/lib/expenses/split'
 
 type Subcategory = { id: string; name: string }
-type Category = { id: string; name: string; subcategories: Subcategory[] }
+type SplitConfig = { familyId: string; inputValue: number | null }
+type Category = {
+  id: string
+  name: string
+  splitMethod: 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
+  splitConfigs: SplitConfig[]
+  subcategories: Subcategory[]
+}
 type Family = { id: string; name: string }
 
 const inputClass =
   'mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 const labelClass = 'block text-sm font-medium text-slate-700 dark:text-slate-300'
+
+const splitMethodLabel: Record<Category['splitMethod'], string> = {
+  EQUAL: 'Equal',
+  PERCENTAGE: 'Percentage',
+  FIXED: 'Fixed + remainder',
+  CUSTOM: 'Custom shares',
+}
 
 export function ExpenseForm({
   categories,
@@ -23,15 +38,22 @@ export function ExpenseForm({
     undefined
   )
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '')
-  const [splitMethod, setSplitMethod] = useState<'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'>('EQUAL')
   const [amount, setAmount] = useState(0)
   const [tax, setTax] = useState(0)
 
-  const subcategories = useMemo(
-    () => categories.find((c) => c.id === categoryId)?.subcategories ?? [],
-    [categories, categoryId]
-  )
+  const category = useMemo(() => categories.find((c) => c.id === categoryId), [categories, categoryId])
+  const subcategories = category?.subcategories ?? []
   const total = Math.round((amount + tax) * 100) / 100
+
+  const splitPreview = useMemo(() => {
+    if (!category) return []
+    return computeSplitsFromCategoryConfig(
+      category.splitMethod,
+      category.splitConfigs,
+      families.map((f) => f.id),
+      total || 0
+    )
+  }, [category, families, total])
 
   return (
     <form action={action} className="space-y-6 max-w-2xl">
@@ -175,59 +197,24 @@ export function ExpenseForm({
         This is a recurring expense
       </label>
 
-      <div>
-        <label className={labelClass}>Split method</label>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(['EQUAL', 'PERCENTAGE', 'FIXED', 'CUSTOM'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setSplitMethod(m)}
-              className={`rounded-full px-3 py-1 text-sm font-medium border ${
-                splitMethod === m
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              {m === 'EQUAL' && 'Equal'}
-              {m === 'PERCENTAGE' && 'Percentage'}
-              {m === 'FIXED' && 'Fixed amount'}
-              {m === 'CUSTOM' && 'Custom shares'}
-            </button>
-          ))}
-        </div>
-        <input type="hidden" name="splitMethod" value={splitMethod} />
-
-        {splitMethod === 'EQUAL' && (
-          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-            Split evenly across {families.length} families (${(total / (families.length || 1)).toFixed(2)} each).
-          </p>
-        )}
-
-        {splitMethod !== 'EQUAL' && (
-          <div className="mt-3 space-y-2">
-            {families.map((f) => (
-              <div key={f.id} className="flex items-center gap-3">
-                <span className="w-32 text-sm text-slate-700 dark:text-slate-300">{f.name}</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  name={`split_${f.id}`}
-                  placeholder={
-                    splitMethod === 'PERCENTAGE' ? '%' : splitMethod === 'FIXED' ? '$' : 'shares'
-                  }
-                  className={`${inputClass} mt-0`}
-                />
-              </div>
-            ))}
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {splitMethod === 'PERCENTAGE' && 'Percentages must add up to 100.'}
-              {splitMethod === 'FIXED' && `Amounts must add up to the total ($${total.toFixed(2)}).`}
-              {splitMethod === 'CUSTOM' &&
-                'Enter relative shares (e.g. number of occupants) — amounts are split proportionally.'}
-            </p>
-          </div>
+      <div className="rounded-md bg-slate-50 dark:bg-slate-800/50 p-3">
+        <p className="text-sm text-slate-700 dark:text-slate-300">
+          Split: <span className="font-medium">{category ? splitMethodLabel[category.splitMethod] : '—'}</span>{' '}
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            (set on the category — edit it from the Categories page)
+          </span>
+        </p>
+        {total > 0 && (
+          <ul className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            {splitPreview.map((s) => {
+              const family = families.find((f) => f.id === s.familyId)
+              return (
+                <li key={s.familyId}>
+                  {family?.name}: ${s.amountOwed.toFixed(2)}
+                </li>
+              )
+            })}
+          </ul>
         )}
       </div>
 

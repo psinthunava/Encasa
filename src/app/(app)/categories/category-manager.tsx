@@ -12,14 +12,24 @@ import {
   unarchiveCategory,
   unarchiveSubcategory,
 } from '@/lib/categories/actions'
+import { CategorySplitEditor } from './category-split-editor'
 
 type Subcategory = { id: string; name: string; archived: boolean }
-type Category = { id: string; name: string; archived: boolean; subcategories: Subcategory[] }
+type SplitConfig = { familyId: string; inputValue: number | null }
+type Category = {
+  id: string
+  name: string
+  archived: boolean
+  splitMethod: 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
+  splitConfigs: SplitConfig[]
+  subcategories: Subcategory[]
+}
+type Family = { id: string; name: string }
 
 const inputClass =
   'rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
-export function CategoryManager({ categories }: { categories: Category[] }) {
+export function CategoryManager({ categories, families }: { categories: Category[]; families: Family[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [pending, startTransition] = useTransition()
 
@@ -76,6 +86,13 @@ export function CategoryManager({ categories }: { categories: Category[] }) {
                 </button>
               </form>
 
+              <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">
+                {category.splitMethod === 'EQUAL' && 'Equal'}
+                {category.splitMethod === 'PERCENTAGE' && 'Percentage'}
+                {category.splitMethod === 'FIXED' && 'Fixed + remainder'}
+                {category.splitMethod === 'CUSTOM' && 'Custom shares'}
+              </span>
+
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -106,7 +123,14 @@ export function CategoryManager({ categories }: { categories: Category[] }) {
             </div>
 
             {expanded.has(category.id) && (
-              <div className="border-t border-slate-200 dark:border-slate-800 px-4 py-3 pl-10 space-y-2">
+              <div className="border-t border-slate-200 dark:border-slate-800 px-4 py-3 pl-10 space-y-4">
+                <CategorySplitEditor
+                  categoryId={category.id}
+                  splitMethod={category.splitMethod}
+                  splitConfigs={category.splitConfigs}
+                  families={families}
+                />
+
                 {category.subcategories
                   .filter((s) => !s.archived)
                   .map((sub) => (

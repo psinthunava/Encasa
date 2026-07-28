@@ -23,13 +23,24 @@ export default async function NewExpensePage() {
     prisma.category.findMany({
       where: { householdId: member.family.householdId, archived: false },
       orderBy: { sortOrder: 'asc' },
-      include: { subcategories: { where: { archived: false }, orderBy: { sortOrder: 'asc' } } },
+      include: {
+        subcategories: { where: { archived: false }, orderBy: { sortOrder: 'asc' } },
+        splitConfigs: true,
+      },
     }),
     prisma.family.findMany({
       where: { householdId: member.family.householdId, archived: false },
       orderBy: { name: 'asc' },
     }),
   ])
+
+  const categoriesForClient = categories.map((c) => ({
+    ...c,
+    splitConfigs: c.splitConfigs.map((sc) => ({
+      familyId: sc.familyId,
+      inputValue: sc.inputValue === null ? null : Number(sc.inputValue),
+    })),
+  }))
 
   return (
     <div>
@@ -39,7 +50,7 @@ export default async function NewExpensePage() {
           ← Back to expenses
         </Link>
       </div>
-      <ExpenseForm categories={categories} families={families} />
+      <ExpenseForm categories={categoriesForClient} families={families} />
     </div>
   )
 }

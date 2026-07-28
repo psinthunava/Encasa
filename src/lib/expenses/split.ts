@@ -44,13 +44,33 @@ export function computePercentageSplit(
   }))
 }
 
+// entries with amount === null receive the remaining balance after fixed
+// amounts are subtracted from total (split evenly if more than one is null).
+// This is what lets a FIXED category default keep working as the expense
+// total varies month to month (e.g. "Family A always pays $300, Family B covers the rest").
 export function computeFixedSplit(
-  entries: { familyId: string; amount: number }[]
+  total: number,
+  entries: { familyId: string; amount: number | null }[]
 ): SplitResult[] {
-  return entries.map((e) => ({
+  const totalCents = Math.round(total * 100)
+  const fixedCents = entries.map((e) => (e.amount == null ? null : Math.round(e.amount * 100)))
+  const sumFixed = fixedCents.reduce((sum: number, c) => sum + (c ?? 0), 0)
+  const remainderRecipients = fixedCents.filter((c) => c === null).length
+  const remainderTotalCents = totalCents - sumFixed
+  const perRemainderCents = remainderRecipients > 0 ? Math.floor(remainderTotalCents / remainderRecipients) : 0
+
+  let remainderIndex = 0
+  const amountsCents = fixedCents.map((c) => {
+    if (c !== null) return c
+    remainderIndex++
+    const isLast = remainderIndex === remainderRecipients
+    return isLast ? remainderTotalCents - perRemainderCents * (remainderRecipients - 1) : perRemainderCents
+  })
+
+  return entries.map((e, i) => ({
     familyId: e.familyId,
     inputValue: e.amount,
-    amountOwed: Math.round(e.amount * 100) / 100,
+    amountOwed: amountsCents[i] / 100,
   }))
 }
 
@@ -72,4 +92,44 @@ export function computeCustomSplit(
 
 export function sumOwed(splits: SplitResult[]): number {
   return Math.round(splits.reduce((sum, s) => sum + s.amountOwed, 0) * 100) / 100
+}
+
+// Computes an expense's splits from its category's stored default split
+// configuration. This is the single place expense creation (and, later,
+// recurring expense generation) should call so the category's rule is
+// always applied consistently.
+export function computeSplitsFromCategoryConfig(
+  splitMethod: SplitMethod,
+  splitConfigs: { familyId: string; inputValue: number | null }[],
+  familyIds: string[],
+  total: number
+): SplitResult[] {
+  if (splitMethod === 'EQUAL' || splitConfigs.length === 0) {
+    return computeEqualSplit(total, familyIds)
+  }
+
+  const configByFamily = new Map(splitConfigs.map((c) => [c.familyId, c.inputValue]))
+
+  if (splitMethod === 'PERCENTAGE') {
+    return computePercentageSplit(
+      total,
+      familyIds.map((familyId) => ({ familyId, percent: configByFamily.get(familyId) ?? 0 }))
+    )
+  }
+
+  if (splitMethod === 'FIXED') {
+    return computeFixedSplit(
+      total,
+      familyIds.map((familyId) => ({
+        familyId,
+        amount: configByFamily.has(familyId) ? configByFamily.get(familyId)! : null,
+      }))
+    )
+  }
+
+  // CUSTOM
+  return computeCustomSplit(
+    total,
+    familyIds.map((familyId) => ({ familyId, weight: configByFamily.get(familyId) ?? 0 }))
+  )
 }

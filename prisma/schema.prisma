@@ -62,11 +62,12 @@ model Family {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  household        Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household        Household             @relation(fields: [householdId], references: [id], onDelete: Cascade)
   members           Member[]
-  expensesPaid      Expense[]         @relation("ExpensePaidByFamily")
+  expensesPaid      Expense[]             @relation("ExpensePaidByFamily")
   expenseSplits     ExpenseSplit[]
   settlementLines   SettlementLine[]
+  categorySplitConfigs CategorySplitConfig[]
 
   @@index([householdId])
 }
@@ -95,20 +96,41 @@ model Member {
 // --- Categories ---
 
 model Category {
-  id          String   @id @default(uuid()) @db.Uuid
-  householdId String   @db.Uuid
+  id          String      @id @default(uuid()) @db.Uuid
+  householdId String      @db.Uuid
   name        String
-  sortOrder   Int      @default(0)
-  archived    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  sortOrder   Int         @default(0)
+  archived    Boolean     @default(false)
+  // Default split applied to every expense in this category, until an admin changes it here.
+  splitMethod SplitMethod @default(EQUAL)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
-  household     Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household     Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
   subcategories Subcategory[]
   expenses      Expense[]
   recurringTemplates RecurringExpenseTemplate[]
+  splitConfigs  CategorySplitConfig[]
 
   @@index([householdId])
+}
+
+// One row per family per category, only used when the category's splitMethod
+// is not EQUAL. Meaning of inputValue depends on splitMethod:
+// PERCENTAGE -> percent (0-100, must sum to 100 across the category's families)
+// CUSTOM     -> relative share/weight (e.g. occupant count), any positive number
+// FIXED      -> fixed dollar reference amount; null means "gets the remaining balance"
+model CategorySplitConfig {
+  id         String   @id @default(uuid()) @db.Uuid
+  categoryId String   @db.Uuid
+  familyId   String   @db.Uuid
+  inputValue Decimal? @db.Decimal(12, 4)
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  family   Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, familyId])
+  @@index([familyId])
 }
 
 model Subcategory {
