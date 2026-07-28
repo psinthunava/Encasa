@@ -1,0 +1,274 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- Enums ---
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum SplitMethod {
+  EQUAL
+  PERCENTAGE
+  FIXED
+  CUSTOM
+}
+
+enum ExpenseStatus {
+  ACTIVE
+  VOID
+}
+
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum SettlementStatus {
+  OPEN
+  SETTLED
+}
+
+// --- Household structure ---
+
+model Household {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  families            Family[]
+  categories          Category[]
+  expenses            Expense[]
+  receipts            Receipt[]
+  settlements         Settlement[]
+  recurringTemplates  RecurringExpenseTemplate[]
+  auditLogs           AuditLog[]
+}
+
+model Family {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  name        String
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  household        Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  members           Member[]
+  expensesPaid      Expense[]         @relation("ExpensePaidByFamily")
+  expenseSplits     ExpenseSplit[]
+  settlementLines   SettlementLine[]
+
+  @@index([householdId])
+}
+
+// Member.id mirrors the Supabase `auth.users.id` (uuid) for that person.
+// Supabase Auth owns credentials; this table only stores app-level profile/role data.
+model Member {
+  id        String   @id @db.Uuid
+  familyId  String   @db.Uuid
+  email     String   @unique
+  name      String
+  role      Role     @default(MEMBER)
+  canAddExpenses Boolean @default(true)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  family           Family            @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  expensesCreated  Expense[]         @relation("ExpenseCreatedBy")
+  receiptsUploaded Receipt[]         @relation("ReceiptUploadedBy")
+  auditLogs        AuditLog[]
+
+  @@index([familyId])
+}
+
+// --- Categories ---
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  name        String
+  sortOrder   Int      @default(0)
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  household     Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  subcategories Subcategory[]
+  expenses      Expense[]
+  recurringTemplates RecurringExpenseTemplate[]
+
+  @@index([householdId])
+}
+
+model Subcategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  categoryId String   @db.Uuid
+  name       String
+  sortOrder  Int      @default(0)
+  archived   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  recurringTemplates RecurringExpenseTemplate[]
+
+  @@index([categoryId])
+}
+
+// --- Expenses ---
+
+model Expense {
+  id            String        @id @default(uuid()) @db.Uuid
+  householdId   String        @db.Uuid
+  date          DateTime      @db.Date
+  categoryId    String        @db.Uuid
+  subcategoryId String?       @db.Uuid
+  description   String
+  vendor        String?
+  amount        Decimal       @db.Decimal(12, 2)
+  tax           Decimal       @default(0) @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  paidByFamilyId String       @db.Uuid
+  notes         String?
+  tags          String[]      @default([])
+  isRecurring   Boolean       @default(false)
+  splitMethod   SplitMethod   @default(EQUAL)
+  status        ExpenseStatus @default(ACTIVE)
+  createdById   String        @db.Uuid
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  household   Household    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    Category     @relation(fields: [categoryId], references: [id])
+  subcategory Subcategory? @relation(fields: [subcategoryId], references: [id])
+  paidByFamily Family      @relation("ExpensePaidByFamily", fields: [paidByFamilyId], references: [id])
+  createdBy   Member       @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  splits      ExpenseSplit[]
+  receipts    Receipt[]
+
+  @@index([householdId, date])
+  @@index([categoryId])
+  @@index([paidByFamilyId])
+}
+
+// One row per family per expense, capturing how that expense was divided.
+model ExpenseSplit {
+  id         String   @id @default(uuid()) @db.Uuid
+  expenseId  String   @db.Uuid
+  familyId   String   @db.Uuid
+  // Meaning depends on the expense's splitMethod:
+  // EQUAL/CUSTOM -> unused input, PERCENTAGE -> percent (0-100), FIXED -> fixed dollar amount
+  inputValue Decimal? @db.Decimal(12, 4)
+  amountOwed Decimal  @db.Decimal(12, 2)
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  family  Family  @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([expenseId, familyId])
+  @@index([familyId])
+}
+
+// --- Receipts ---
+
+model Receipt {
+  id           String   @id @default(uuid()) @db.Uuid
+  householdId  String   @db.Uuid
+  expenseId    String   @db.Uuid
+  storagePath  String
+  fileName     String
+  mimeType     String
+  uploadedById String   @db.Uuid
+  createdAt    DateTime @default(now())
+
+  household  Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  expense    Expense   @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  uploadedBy Member    @relation("ReceiptUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([expenseId])
+}
+
+// --- Recurring expense templates ---
+
+model RecurringExpenseTemplate {
+  id            String             @id @default(uuid()) @db.Uuid
+  householdId   String             @db.Uuid
+  categoryId    String             @db.Uuid
+  subcategoryId String?            @db.Uuid
+  description   String
+  vendor        String?
+  amount        Decimal            @db.Decimal(12, 2)
+  splitMethod   SplitMethod        @default(EQUAL)
+  frequency     RecurringFrequency
+  nextRunDate   DateTime           @db.Date
+  active        Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  household   Household    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    Category     @relation(fields: [categoryId], references: [id])
+  subcategory Subcategory? @relation(fields: [subcategoryId], references: [id])
+
+  @@index([householdId])
+}
+
+// --- Settlements ---
+
+model Settlement {
+  id          String           @id @default(uuid()) @db.Uuid
+  householdId String           @db.Uuid
+  periodStart DateTime         @db.Date
+  periodEnd   DateTime         @db.Date
+  status      SettlementStatus @default(OPEN)
+  generatedAt DateTime         @default(now())
+  settledAt   DateTime?
+
+  household Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  lines     SettlementLine[]
+
+  @@unique([householdId, periodStart, periodEnd])
+}
+
+model SettlementLine {
+  id           String  @id @default(uuid()) @db.Uuid
+  settlementId String  @db.Uuid
+  familyId     String  @db.Uuid
+  totalPaid    Decimal @db.Decimal(12, 2)
+  totalOwed    Decimal @db.Decimal(12, 2)
+  balance      Decimal @db.Decimal(12, 2) // positive = owed money back, negative = owes money
+
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  family     Family     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([settlementId, familyId])
+}
+
+// --- Audit log ---
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @db.Uuid
+  memberId    String?  @db.Uuid
+  action      String
+  entityType  String
+  entityId    String?  @db.Uuid
+  beforeData  Json?
+  afterData   Json?
+  createdAt   DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  member    Member?   @relation(fields: [memberId], references: [id])
+
+  @@index([householdId, createdAt])
+}
