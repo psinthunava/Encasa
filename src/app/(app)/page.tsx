@@ -44,6 +44,10 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-10">
+      <h1 className="text-center text-2xl font-bold text-slate-900 dark:text-slate-100">
+        {start.toLocaleString('default', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+      </h1>
+
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
           <p className="text-sm text-slate-500 dark:text-slate-400">This month&apos;s spending</p>
