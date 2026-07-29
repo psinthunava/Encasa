@@ -94,6 +94,33 @@ Schema exists (`action`, `entityType`, `entityId`, `beforeData`/`afterData` as J
 **nothing currently writes to this table** and there's no admin UI to read it. Scaffolding
 only.
 
+### Bill / BillPayment / BillAttachment
+
+Tracks a vendor invoice from arrival to payoff, independent of `Expense` until money
+actually moves. `Bill` carries `categoryId`/`subcategoryId` (same household/category-scoped
+FKs as `Expense`), `vendor`, `invoiceId`, `statementDate`, `dueDate`, `amountDue`,
+`description`/`notes` (optional), and `status` (`BillStatus`: `UNPAID` → `PARTIAL` → `PAID`).
+
+**Each `BillPayment` immediately generates its own `Expense`** — paid by whichever family
+made that specific payment, split per the bill's live category/subcategory rule via the
+same `computeSplitsFromSplitConfig` function `Expense` creation uses.
+`BillPayment.expenseId` (unique) points at the Expense it produced. This means a bill paid
+off in installments by different families produces multiple correctly-attributed Expense
+rows, with no changes needed to `Expense`, `ExpenseSplit`, or the settlement engine. `Bill`
+recomputes `status` after each payment: `PARTIAL` once any payment lands, `PAID` once
+cumulative payments reach `amountDue` — at which point it drops out of the default
+open-bills list (`/bills`), though the row and its history remain queryable
+(`/bills?status=paid`).
+
+`BillAttachment` stores scanned/photographed/attached files (Supabase Storage, private
+bucket, JPEG/PNG/HEIC/PDF up to 10MB) — see Architecture doc for the storage approach. No
+OCR is performed on these; see Decision Log.
+
+Deleting a `Bill` cascades to its `BillPayment`/`BillAttachment` rows (and their storage
+files) but **never** to the `Expense` rows those payments generated — there is no cascade
+path from `BillPayment` to `Expense`, so financial history survives even if the bill
+tracking record is removed (consistent with NFR-2).
+
 ## Enums
 
 | Enum | Values |
@@ -103,6 +130,7 @@ only.
 | `ExpenseStatus` | `ACTIVE`, `VOID` |
 | `RecurringFrequency` | `WEEKLY`, `MONTHLY`, `QUARTERLY`, `YEARLY` |
 | `SettlementStatus` | `OPEN`, `SETTLED` |
+| `BillStatus` | `UNPAID`, `PARTIAL`, `PAID` |
 
 ## Migration history
 
@@ -112,6 +140,7 @@ only.
 | `..._category_split_config` | Added `Category.splitMethod` + `CategorySplitConfig` (superseded). |
 | `..._subcategory_split_config` | Dropped the above; added `Subcategory.splitMethod` + `SubcategorySplitConfig` instead. |
 | `..._vendor_and_subcategory_recurring` | Added `Vendor` model + `Subcategory.isRecurring`. |
+| `..._add_bills` | Added `Bill`, `BillPayment`, `BillAttachment` models + `BillStatus` enum. |
 
 All migrations are additive/corrective — no data-loss-risk migrations have been applied
 against real (non-empty) data; the `CategorySplitConfig → SubcategorySplitConfig` swap

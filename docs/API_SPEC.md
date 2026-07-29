@@ -48,6 +48,24 @@ All require `requireAdmin()`.
 | `deleteVendor(vendorId)` | any signed-in member | Removes a saved vendor name from the household's autocomplete list. Does not affect any `Expense.vendor` text already saved. |
 | `ensureVendorSaved(householdId, name)` | *(internal helper, not a Server Action itself)* | Called from `createExpense`/`updateExpense`. Upserts by `(householdId, name)` — no-op if already saved. |
 
+## `src/lib/bills/actions.ts`
+
+| Action | Auth | Behavior |
+|---|---|---|
+| `createBill(prevState, formData)` | member with `canAddExpenses`, or admin | Validates via Zod (category, vendor, invoice ID, statement/due dates, amount due required; subcategory/description/notes optional). Auto-saves the vendor via `ensureVendorSaved`, same as expense entry. Any attached files (`accept`ed: JPEG/PNG/HEIC/PDF, ≤10MB) are validated up front, then the `Bill` row is created before files are uploaded to Supabase Storage and `BillAttachment` rows created — a failed upload doesn't lose the bill's core data. Redirects to the new bill's detail page. |
+| `updateBill(billId, prevState, formData)` | admin, or the bill's creator (if still `canAddExpenses`) | Same validation as create; no status-based lock — editing after payments exist only affects the snapshot future payments will use (existing precedent: changing a Subcategory's default doesn't retroactively touch already-saved Expenses). Appends any newly attached files. |
+| `deleteBill(billId)` | **admin only** | Permanently deletes the `Bill` row (cascades `BillPayment`/`BillAttachment` rows and their storage files). Does **not** delete the `Expense` rows its payments already generated. |
+| `recordBillPayment(billId, prevState, formData)` | member with `canAddExpenses`, or admin | The Bill→Expense conversion step. Validates amount/date/paying family; rejects if the bill is already `PAID`. In one transaction: creates an `Expense` (+ `ExpenseSplit[]` via `computeSplitsFromSplitConfig`, reusing `src/lib/expenses/split.ts` unchanged) for exactly this payment's amount, paid by the selected family; creates the `BillPayment` row linking to that Expense; recomputes the bill's cumulative paid total and sets `status` to `PARTIAL` or `PAID`. |
+| `deleteBillAttachment(attachmentId)` | admin, or the bill's creator | Removes the storage object and the `BillAttachment` row. |
+
+## `src/lib/supabase/storage.ts`
+
+Not Server Actions — plain server-only functions used by `bills/actions.ts` and the bill
+detail page, via the service-role admin client (`src/lib/supabase/admin.ts`):
+`assertValidAttachmentFile(file)` (mime/size pre-check), `uploadBillAttachment(householdId,
+billId, file)`, `getSignedAttachmentUrl(storagePath)` (1-hour signed URL, bucket is
+private), `removeAttachmentFile(storagePath)`.
+
 ## `src/lib/settlements/actions.ts`
 
 | Action | Auth | Behavior |
@@ -83,5 +101,6 @@ client-side expense form (for the live split preview):
 | `/login`, `/signup` | Public |
 | `/` (dashboard) | Any signed-in member |
 | `/expenses`, `/expenses/new`, `/expenses/[id]/edit` | Any signed-in member (new/edit gated by `canAddExpenses` inside) |
+| `/bills`, `/bills/new`, `/bills/[id]`, `/bills/[id]/edit` | Any signed-in member (new/edit/record-payment gated by `canAddExpenses` inside) |
 | `/settlements` | Any signed-in member (generate/mark-settled buttons admin-only) |
 | `/categories` | Admin only (`requireAdmin()` at the page level) |

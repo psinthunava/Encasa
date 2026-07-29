@@ -97,3 +97,38 @@ required variables (see Known Issues #1), the working fix was setting them direc
 the Netlify dashboard UI.
 **Rationale:** Empirical — the UI path is confirmed reliable, the API path had an
 unexplained gap between "success" response and actual build-time availability.
+
+### D12 — Bill→Expense conversion happens per-payment, not once at full payment (2026-07-28)
+**Decision:** Every recorded `BillPayment` (partial or final) immediately creates its own
+`Expense`, paid by whichever family made that specific payment, split per the bill's
+category/subcategory rule via the existing `computeSplitsFromSplitConfig`.
+**Context:** `Expense.paidByFamilyId` is a single required field, but a bill can be paid off
+in installments, potentially by different families. An initial design considered a single
+"designated payer" field on `Bill` with one lump-sum `Expense` created only at full payment.
+**Rationale:** Per-payment conversion correctly handles the multi-family-installment case
+(two families each paying half of one bill produces two correctly-attributed, correctly-
+split Expense rows) without any change to the core `Expense` model, and keeps
+balances/settlements current as money actually moves rather than only at the end.
+**Consequence:** No changes needed to `src/lib/settlements/engine.ts` or
+`computeBalancesForPeriod` — bill-payment-generated Expenses are indistinguishable from
+manually-entered ones.
+**Alternatives considered:** Single designated payer + one lump-sum Expense at full payment
+— rejected as simpler but incorrect for bills paid by more than one family over time.
+
+### D13 — Bills: OCR deliberately deferred, attach-only for now (2026-07-28)
+**Decision:** The Bills feature supports manual entry plus photo/PDF attach (including
+mobile camera capture via `capture="environment"`), with no text-extraction/OCR step.
+**Rationale:** Matches the PRD, which already lists "OCR on receipts" as a Future/deferred
+item, and the stated "zero ongoing cost" success criterion — cloud OCR APIs are usage-
+priced, and a free client-side OCR library was also explicitly declined in favor of keeping
+this pass simple. Can be revisited later without any schema change (attachments already
+exist as files; OCR would just read them).
+
+### D14 — First use of Supabase Storage: private bucket + signed URLs + service-role client (2026-07-28)
+**Decision:** Bill attachments use a new, private `bill-attachments` Storage bucket.
+Uploads, downloads (via `createSignedUrl`, 1-hour expiry), and deletes all go through the
+service-role admin client (`src/lib/supabase/admin.ts`), never the anon/browser client.
+**Rationale:** Consistent with D8 — this app enforces all authorization in the application
+layer (`requireMember`/`requireAdmin`), not via Supabase RLS/storage policies. Every bill
+Server Action already re-checks identity/role before touching Storage, so the service-role
+client is safe to use here the same way it's used for Postgres access.

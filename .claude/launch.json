@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "encasa-dev",
+      "runtimeExecutable": "dev-wrapper.cmd",
+      "runtimeArgs": [],
+      "port": 3000
+    },
+    {
+      "name": "encasa-dev-preview",
+      "runtimeExecutable": ".\\dev-wrapper-preview.cmd",
+      "runtimeArgs": [],
+      "port": 3100,
+      "autoPort": true
+    }
+  ]
+}

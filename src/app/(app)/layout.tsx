@@ -7,7 +7,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const navItems = [
     { href: '/', label: 'Dashboard' },
-    { href: '/expenses', label: 'Expenses' },
+    { href: '/bills', label: 'Bills' },
+    { href: '/expenses', label: 'Payment' },
     { href: '/settlements', label: 'Settlements' },
     ...(member.role === 'ADMIN' ? [{ href: '/categories', label: 'Categories' }] : []),
   ]

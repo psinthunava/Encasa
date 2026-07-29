@@ -37,6 +37,12 @@ enum SettlementStatus {
   SETTLED
 }
 
+enum BillStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
 // --- Household structure ---
 
 model Household {
@@ -53,6 +59,7 @@ model Household {
   recurringTemplates  RecurringExpenseTemplate[]
   auditLogs           AuditLog[]
   vendors             Vendor[]
+  bills               Bill[]
 }
 
 // Saved vendor/store names for autocomplete on expense entry. Free-text on
@@ -84,6 +91,7 @@ model Family {
   expenseSplits     ExpenseSplit[]
   settlementLines   SettlementLine[]
   subcategorySplitConfigs SubcategorySplitConfig[]
+  billPayments      BillPayment[]            @relation("BillPaymentPaidByFamily")
 
   @@index([householdId])
 }
@@ -105,6 +113,9 @@ model Member {
   expensesCreated  Expense[]         @relation("ExpenseCreatedBy")
   receiptsUploaded Receipt[]         @relation("ReceiptUploadedBy")
   auditLogs        AuditLog[]
+  billsCreated     Bill[]            @relation("BillCreatedBy")
+  billPaymentsCreated BillPayment[]  @relation("BillPaymentCreatedBy")
+  billAttachmentsUploaded BillAttachment[] @relation("BillAttachmentUploadedBy")
 
   @@index([familyId])
 }
@@ -124,6 +135,7 @@ model Category {
   subcategories Subcategory[]
   expenses      Expense[]
   recurringTemplates RecurringExpenseTemplate[]
+  bills         Bill[]
 
   @@index([householdId])
 }
@@ -145,6 +157,7 @@ model Subcategory {
   expenses  Expense[]
   recurringTemplates RecurringExpenseTemplate[]
   splitConfigs SubcategorySplitConfig[]
+  bills     Bill[]
 
   @@index([categoryId])
 }
@@ -197,6 +210,7 @@ model Expense {
   createdBy   Member       @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
   splits      ExpenseSplit[]
   receipts    Receipt[]
+  billPayment BillPayment?
 
   @@index([householdId, date])
   @@index([categoryId])
@@ -218,6 +232,84 @@ model ExpenseSplit {
 
   @@unique([expenseId, familyId])
   @@index([familyId])
+}
+
+// --- Bills ---
+
+// A Bill tracks a vendor invoice from arrival to payoff. Each recorded
+// BillPayment immediately generates its own Expense (paid by whichever
+// family made that payment, split per this bill's category/subcategory
+// rule) -- so a bill paid off in several installments, possibly by
+// different families, produces several correctly-attributed Expense rows.
+// status flips PARTIAL once any payment lands, PAID once cumulative
+// payments reach amountDue, at which point the bill drops out of the
+// open-bills list.
+model Bill {
+  id            String     @id @default(uuid()) @db.Uuid
+  householdId   String     @db.Uuid
+  categoryId    String     @db.Uuid
+  subcategoryId String?    @db.Uuid
+  vendor        String
+  invoiceId     String
+  description   String?
+  statementDate DateTime   @db.Date
+  dueDate       DateTime   @db.Date
+  amountDue     Decimal    @db.Decimal(12, 2)
+  notes         String?
+  status        BillStatus @default(UNPAID)
+  createdById   String     @db.Uuid
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  household   Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    Category         @relation(fields: [categoryId], references: [id])
+  subcategory Subcategory?     @relation(fields: [subcategoryId], references: [id])
+  createdBy   Member           @relation("BillCreatedBy", fields: [createdById], references: [id])
+  payments    BillPayment[]
+  attachments BillAttachment[]
+
+  @@index([householdId, status])
+  @@index([householdId, dueDate])
+}
+
+// One row per payment made toward a Bill. expenseId points at the Expense
+// this specific payment generated -- deleting the parent Bill cascades to
+// BillPayment rows but never to the Expense rows they point at, so
+// financial history survives even if the bill tracking record is removed.
+model BillPayment {
+  id             String   @id @default(uuid()) @db.Uuid
+  billId         String   @db.Uuid
+  amount         Decimal  @db.Decimal(12, 2)
+  paidDate       DateTime @db.Date
+  paidByFamilyId String   @db.Uuid
+  notes          String?
+  expenseId      String   @unique @db.Uuid
+  createdById    String   @db.Uuid
+  createdAt      DateTime @default(now())
+
+  bill         Bill    @relation(fields: [billId], references: [id], onDelete: Cascade)
+  paidByFamily Family  @relation("BillPaymentPaidByFamily", fields: [paidByFamilyId], references: [id])
+  expense      Expense @relation(fields: [expenseId], references: [id])
+  createdBy    Member  @relation("BillPaymentCreatedBy", fields: [createdById], references: [id])
+
+  @@index([billId])
+}
+
+// A scanned/photographed/attached file for a bill (Supabase Storage,
+// private bucket -- storagePath is resolved to a signed URL on render).
+model BillAttachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  billId       String   @db.Uuid
+  storagePath  String
+  fileName     String
+  mimeType     String
+  uploadedById String   @db.Uuid
+  createdAt    DateTime @default(now())
+
+  bill       Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  uploadedBy Member @relation("BillAttachmentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([billId])
 }
 
 // --- Receipts ---

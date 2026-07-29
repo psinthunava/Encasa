@@ -16,6 +16,21 @@
 - [x] GitHub backup (`psinthunava/Encasa`)
 - [x] Netlify deployment with CI (auto-deploy on push to `master`)
 
+## Phase 1.5 — Bills (complete, added ahead of the Phase 2 queue below)
+
+Inserted 2026-07-28 per explicit user request, out of the priority order set below (History
+view → Reports → Receipt upload never included Bills at all).
+
+- [x] `Bill`/`BillPayment`/`BillAttachment` schema — track a vendor invoice from arrival to
+  payoff (vendor, invoice #, statement/due dates, amount due)
+- [x] Manual entry + attach/scan (photo/PDF, Supabase Storage) — **no OCR** (deliberately
+  deferred, see PRD §4 and Decision Log)
+- [x] Open-bills list (Unpaid/Partial, sorted by due date, balance shown), paid bills drop
+  out of the default list but remain reachable (`/bills?status=paid`)
+- [x] Each recorded payment (partial or final) immediately generates its own `Expense`,
+  split per the bill's category/subcategory rule — no changes needed to the settlement
+  engine or balance calculations
+
 ## Phase 2 — Usability layer (not started)
 
 Priority order, per user direction 2026-07-28:

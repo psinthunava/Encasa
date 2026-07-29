@@ -3,13 +3,37 @@ import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
 import { VoidButton } from './void-button'
 import { DeleteButton } from './delete-button'
+import { SortControl } from './sort-control'
 
-export default async function ExpensesPage() {
+const sortFields = ['date', 'total', 'category', 'paidBy'] as const
+type SortField = (typeof sortFields)[number]
+
+function orderByFor(sort: SortField, dir: 'asc' | 'desc') {
+  switch (sort) {
+    case 'total':
+      return { total: dir }
+    case 'category':
+      return { category: { name: dir } }
+    case 'paidBy':
+      return { paidByFamily: { name: dir } }
+    default:
+      return { date: dir }
+  }
+}
+
+export default async function ExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>
+}) {
   const member = await requireMember()
+  const params = await searchParams
+  const sort: SortField = sortFields.includes(params.sort as SortField) ? (params.sort as SortField) : 'date'
+  const dir: 'asc' | 'desc' = params.dir === 'asc' ? 'asc' : 'desc'
 
   const expenses = await prisma.expense.findMany({
     where: { householdId: member.family.householdId },
-    orderBy: { date: 'desc' },
+    orderBy: orderByFor(sort, dir),
     take: 100,
     include: {
       category: true,
@@ -20,20 +44,11 @@ export default async function ExpensesPage() {
     },
   })
 
-  const canAdd = member.role === 'ADMIN' || member.canAddExpenses
-
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Expenses</h2>
-        {canAdd && (
-          <Link
-            href="/expenses/new"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-          >
-            Add expense
-          </Link>
-        )}
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Payment detail</h2>
+        <SortControl sort={sort} dir={dir} />
       </div>
 
       {expenses.length === 0 ? (

@@ -18,6 +18,9 @@ classes. This document captures the conventions actually in use so new UI stays 
 | Negative balance ("this family owes") | `text-red-600` | Dashboard, Settlements |
 | Neutral/secondary text | `text-slate-500 dark:text-slate-400` | Helper text, labels, timestamps |
 | Body text | `text-slate-900 dark:text-slate-100` | Primary content |
+| Bill status: Unpaid | `bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400` | Bills list/detail status pill |
+| Bill status: Partial | `bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400` | Bills list/detail status pill |
+| Bill status: Paid | `bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400` | Bills detail status pill (never shown in the default open-bills list) |
 
 ## Typography
 

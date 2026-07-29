@@ -5,6 +5,15 @@ All notable changes to this project, newest first. Format loosely follows
 
 ## 2026-07-28
 
+- **Added Bills** (`Bill`/`BillPayment`/`BillAttachment` + `BillStatus`): a "Bills" page for
+  tracking a vendor invoice from arrival to payoff — manual entry plus attach/scan
+  (photo/PDF via Supabase Storage, no OCR). Bills list shows open (Unpaid/Partial) bills
+  with due date and balance; each recorded payment immediately generates its own `Expense`
+  (paid by whichever family made that payment, split per the bill's category/subcategory
+  rule), so a bill paid off in installments — possibly by different families — produces
+  correctly-attributed Expense rows with no changes to the settlement engine. A bill drops
+  off the open list once fully paid but stays reachable under "View paid bills." First use
+  of Supabase Storage in this app (private bucket, signed URLs, service-role client).
 - **Deployed to production.** Fixed a missed local commit (`prisma generate` step in
   `package.json`'s build script) and a set of environment variables that failed to persist
   via the Netlify API. Site live at https://encasa-household-expenses.netlify.app,
