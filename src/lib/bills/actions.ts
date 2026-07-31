@@ -231,6 +231,7 @@ export async function deleteBillAttachment(attachmentId: string) {
   await prisma.billAttachment.delete({ where: { id: attachmentId } })
 
   revalidatePath(`/bills/${attachment.billId}`)
+  revalidatePath(`/bills/${attachment.billId}/edit`)
 }
 
 // The conversion step: every recorded payment (partial or final)

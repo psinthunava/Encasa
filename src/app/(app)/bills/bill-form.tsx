@@ -4,11 +4,13 @@ import { useMemo, useRef, useState, useActionState } from 'react'
 import Link from 'next/link'
 import type { BillFormState } from '@/lib/bills/actions'
 import { VendorCombobox } from '../expenses/vendor-combobox'
+import { AttachmentDeleteButton } from './attachment-delete-button'
 
 type SplitMethod = 'EQUAL' | 'PERCENTAGE' | 'FIXED' | 'CUSTOM'
 type Subcategory = { id: string; name: string; splitMethod: SplitMethod }
 type Category = { id: string; name: string; subcategories: Subcategory[] }
 type Vendor = { id: string; name: string }
+type ExistingAttachment = { id: string; fileName: string; url: string | null }
 
 export type BillInitialValues = {
   categoryId: string
@@ -41,6 +43,7 @@ export function BillForm({
   vendors,
   action,
   initialValues,
+  existingAttachments,
   title,
   submitLabel,
 }: {
@@ -48,6 +51,7 @@ export function BillForm({
   vendors: Vendor[]
   action: (state: BillFormState, formData: FormData) => Promise<BillFormState>
   initialValues?: BillInitialValues
+  existingAttachments?: ExistingAttachment[]
   title: string
   submitLabel: string
 }) {
@@ -221,6 +225,34 @@ export function BillForm({
             className={inputClass}
           />
         </div>
+
+        {existingAttachments && existingAttachments.length > 0 && (
+          <div>
+            <p className={labelClass}>Attached files</p>
+            <ul className="mt-1 space-y-1">
+              {existingAttachments.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between rounded-md border border-slate-200 dark:border-slate-800 px-3 py-2 text-sm"
+                >
+                  {a.url ? (
+                    <a
+                      href={a.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate text-indigo-600 hover:underline"
+                    >
+                      {a.fileName}
+                    </a>
+                  ) : (
+                    <span className="truncate text-slate-500 dark:text-slate-400">{a.fileName} (unavailable)</span>
+                  )}
+                  <AttachmentDeleteButton attachmentId={a.id} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div>
           <label htmlFor="attachments" className={labelClass}>

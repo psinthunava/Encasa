@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
 import { updateBill } from '@/lib/bills/actions'
+import { getSignedAttachmentUrl } from '@/lib/supabase/storage'
 import { BillForm } from '../../bill-form'
 
 export default async function EditBillPage({ params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +12,7 @@ export default async function EditBillPage({ params }: { params: Promise<{ id: s
 
   const bill = await prisma.bill.findFirst({
     where: { id, householdId: member.family.householdId },
+    include: { attachments: { orderBy: { createdAt: 'asc' } } },
   })
   if (!bill) notFound()
 
@@ -28,7 +30,7 @@ export default async function EditBillPage({ params }: { params: Promise<{ id: s
     )
   }
 
-  const [categories, vendors] = await Promise.all([
+  const [categories, vendors, existingAttachments] = await Promise.all([
     prisma.category.findMany({
       where: { householdId: member.family.householdId, archived: false },
       orderBy: { sortOrder: 'asc' },
@@ -44,12 +46,20 @@ export default async function EditBillPage({ params }: { params: Promise<{ id: s
       orderBy: { name: 'asc' },
       select: { id: true, name: true },
     }),
+    Promise.all(
+      bill.attachments.map(async (a) => ({
+        id: a.id,
+        fileName: a.fileName,
+        url: await getSignedAttachmentUrl(a.storagePath),
+      }))
+    ),
   ])
 
   return (
     <BillForm
       categories={categories}
       vendors={vendors}
+      existingAttachments={existingAttachments}
       action={updateBill.bind(null, bill.id)}
       title="Edit bill"
       submitLabel="Save changes"
