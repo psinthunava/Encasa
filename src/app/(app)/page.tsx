@@ -13,19 +13,20 @@ export default async function DashboardPage() {
   const member = await requireMember()
   const { start, end } = monthBounds(new Date())
 
-  const [balances, recentExpenses, monthExpenses] = await Promise.all([
+  const [balances, monthExpenses, monthBills] = await Promise.all([
     computeBalancesForPeriod(member.family.householdId, start, end),
-    prisma.expense.findMany({
-      where: { householdId: member.family.householdId, status: 'ACTIVE' },
-      orderBy: { date: 'desc' },
-      take: 8,
-      include: { category: true, paidByFamily: true },
-    }),
     prisma.expense.findMany({
       where: {
         householdId: member.family.householdId,
         status: 'ACTIVE',
         date: { gte: start, lte: end },
+      },
+      include: { category: true, paidByFamily: true },
+    }),
+    prisma.bill.findMany({
+      where: {
+        householdId: member.family.householdId,
+        dueDate: { gte: start, lte: end },
       },
       include: { category: true },
     }),
@@ -41,6 +42,34 @@ export default async function DashboardPage() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
   const maxCategoryAmount = topCategories[0]?.[1] ?? 1
+
+  type FeedItem = {
+    id: string
+    date: Date
+    href: string
+    title: string
+    subtitle: string
+    amount: number
+  }
+  const billItems: FeedItem[] = monthBills.map((b) => ({
+    id: `bill-${b.id}`,
+    date: b.dueDate,
+    href: `/bills/${b.id}/edit`,
+    title: b.vendor,
+    subtitle: `Bill due · ${b.category.name} · ${b.dueDate.toISOString().slice(0, 10)}`,
+    amount: Number(b.amountDue),
+  }))
+  const paymentItems: FeedItem[] = monthExpenses.map((e) => ({
+    id: `payment-${e.id}`,
+    date: e.date,
+    href: `/expenses/${e.id}/edit`,
+    title: e.description,
+    subtitle: `Payment · ${e.category.name} · ${e.paidByFamily.name} · ${e.date.toISOString().slice(0, 10)}`,
+    amount: Number(e.total),
+  }))
+  const billsAndPayments = [...billItems, ...paymentItems].sort(
+    (a, b) => a.date.getTime() - b.date.getTime()
+  )
 
   return (
     <div className="space-y-10">
@@ -105,26 +134,24 @@ export default async function DashboardPage() {
 
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Recent expenses</h2>
-            <Link href="/expenses" className="text-sm text-indigo-600 hover:underline">
-              View all
-            </Link>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Bills &amp; Payments</h2>
           </div>
-          {recentExpenses.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No expenses recorded yet.</p>
+          {billsAndPayments.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No bills or payments this month yet.</p>
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800">
-              {recentExpenses.map((e) => (
-                <li key={e.id} className="flex items-center justify-between px-4 py-3 text-sm">
+              {billsAndPayments.map((item) => (
+                <li key={item.id} className="flex items-center justify-between px-4 py-3 text-sm">
                   <div>
-                    <p className="font-medium text-slate-900 dark:text-slate-100">{e.description}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {e.category.name} · {e.paidByFamily.name} · {e.date.toISOString().slice(0, 10)}
-                    </p>
+                    <p className="font-medium text-slate-900 dark:text-slate-100">{item.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{item.subtitle}</p>
                   </div>
-                  <span className="font-medium text-slate-900 dark:text-slate-100">
-                    ${Number(e.total).toFixed(2)}
-                  </span>
+                  <Link
+                    href={item.href}
+                    className="font-medium text-indigo-600 hover:underline"
+                  >
+                    ${item.amount.toFixed(2)}
+                  </Link>
                 </li>
               ))}
             </ul>
