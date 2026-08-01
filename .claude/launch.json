@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "encasa-dev",
-      "runtimeExecutable": "dev-wrapper.cmd",
+      "runtimeExecutable": ".\\dev-wrapper.cmd",
       "runtimeArgs": [],
       "port": 3000
     },

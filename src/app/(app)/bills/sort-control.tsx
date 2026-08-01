@@ -18,7 +18,7 @@ const options = [
   { value: 'vendor_desc', label: 'Vendor (Z–A)' },
 ] as const
 
-export function SortControl({ sort, dir, showPaid }: { sort: string; dir: string; showPaid: boolean }) {
+export function SortControl({ sort, dir }: { sort: string; dir: string }) {
   const router = useRouter()
   const current = `${sort}_${dir}`
 
@@ -29,11 +29,7 @@ export function SortControl({ sort, dir, showPaid }: { sort: string; dir: string
         value={current}
         onChange={(e) => {
           const [newSort, newDir] = e.target.value.split('_')
-          const params = new URLSearchParams()
-          if (showPaid) params.set('status', 'paid')
-          params.set('sort', newSort)
-          params.set('dir', newDir)
-          router.push(`/bills?${params.toString()}`)
+          router.push(`/bills?sort=${newSort}&dir=${newDir}`)
         }}
         className={inputClass}
       >

@@ -36,22 +36,134 @@ const splitMethodLabel: Record<string, string> = {
   CUSTOM: 'Custom shares',
 }
 
+type BillRow = {
+  id: string
+  vendor: string
+  invoiceId: string
+  dueDate: Date
+  amountDue: unknown
+  status: string
+  category: { name: string }
+  subcategory: { name: string; splitMethod: string } | null
+  balance: number
+  lastPaidDate: Date | null
+}
+
+function BillsTable({
+  bills,
+  showPaid,
+  canAdd,
+  isAdmin,
+}: {
+  bills: BillRow[]
+  showPaid: boolean
+  canAdd: boolean
+  isAdmin: boolean
+}) {
+  if (bills.length === 0) {
+    return (
+      <p className="text-slate-500 dark:text-slate-400">
+        {showPaid ? 'No paid bills yet.' : 'No open bills.'}
+      </p>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+      <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+        <thead className="bg-slate-50 dark:bg-slate-900">
+          <tr>
+            <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">
+              {showPaid ? 'Paid date' : 'Due date'}
+            </th>
+            <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Vendor</th>
+            <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Invoice #</th>
+            <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Category</th>
+            <th className="px-4 py-2 text-right font-medium text-slate-600 dark:text-slate-400">Amount due</th>
+            <th className="px-4 py-2 text-right font-medium text-slate-600 dark:text-slate-400">Balance</th>
+            <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Split</th>
+            <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Status</th>
+            <th className="px-4 py-2" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          {bills.map((b) => {
+            const { balance, lastPaidDate } = b
+            return (
+              <tr key={b.id}>
+                <td
+                  className={`px-4 py-2 whitespace-nowrap ${
+                    showPaid ? 'text-slate-700 dark:text-slate-300' : dueDateClass(b.dueDate)
+                  }`}
+                >
+                  {showPaid
+                    ? (lastPaidDate?.toISOString().slice(0, 10) ?? '—')
+                    : b.dueDate.toISOString().slice(0, 10)}
+                </td>
+                <td className="px-4 py-2 text-slate-900 dark:text-slate-100">
+                  <Link href={`/bills/${b.id}`} className="hover:underline">
+                    {b.vendor}
+                  </Link>
+                </td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-400">{b.invoiceId}</td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                  {b.category.name}
+                  {b.subcategory ? ` / ${b.subcategory.name}` : ''}
+                </td>
+                <td className="px-4 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                  ${Number(b.amountDue).toFixed(2)}
+                </td>
+                <td className="px-4 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                  ${balance.toFixed(2)}
+                </td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                  {splitMethodLabel[b.subcategory?.splitMethod ?? 'EQUAL']}
+                </td>
+                <td className="px-4 py-2">
+                  <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusPillClass[b.status]}`}>
+                    {statusLabel[b.status]}
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <div className="flex items-center justify-end gap-3">
+                    {canAdd && b.status !== 'PAID' && (
+                      <Link
+                        href={`/bills/${b.id}#pay`}
+                        className="text-xs font-medium text-green-600 dark:text-green-500 hover:underline"
+                      >
+                        Pay
+                      </Link>
+                    )}
+                    <Link
+                      href={`/bills/${b.id}/edit`}
+                      className="text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      View
+                    </Link>
+                    {isAdmin && <DeleteButton billId={b.id} />}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default async function BillsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; sort?: string; dir?: string }>
+  searchParams: Promise<{ sort?: string; dir?: string }>
 }) {
-  const { status, sort: sortParam, dir: dirParam } = await searchParams
-  const showPaid = status === 'paid'
+  const { sort: sortParam, dir: dirParam } = await searchParams
   const sort: SortField = sortFields.includes(sortParam as SortField) ? (sortParam as SortField) : 'due'
   const dir: 'asc' | 'desc' = dirParam === 'desc' ? 'desc' : 'asc'
   const member = await requireMember()
 
   const rawBills = await prisma.bill.findMany({
-    where: {
-      householdId: member.family.householdId,
-      status: showPaid ? 'PAID' : { not: 'PAID' },
-    },
+    where: { householdId: member.family.householdId },
     include: {
       category: true,
       subcategory: true,
@@ -59,7 +171,7 @@ export default async function BillsPage({
     },
   })
 
-  const bills = rawBills
+  const enriched = rawBills
     .map((b) => {
       const paid = b.payments.reduce((sum, p) => sum + Number(p.amount), 0)
       const balance = Math.round((Number(b.amountDue) - paid) * 100) / 100
@@ -90,22 +202,18 @@ export default async function BillsPage({
       return dir === 'desc' ? -cmp : cmp
     })
 
+  const openBills = enriched.filter((b) => b.status !== 'PAID')
+  const paidBills = enriched.filter((b) => b.status === 'PAID')
+
   const canAdd = member.role === 'ADMIN' || member.canAddExpenses
+  const isAdmin = member.role === 'ADMIN'
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Bills</h2>
-          <Link
-            href={showPaid ? '/bills' : '/bills?status=paid'}
-            className="text-sm text-indigo-600 hover:underline"
-          >
-            {showPaid ? '← Back to open bills' : 'View paid bills'}
-          </Link>
-        </div>
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Bills</h2>
         <div className="flex items-center gap-4">
-          <SortControl sort={sort} dir={dir} showPaid={showPaid} />
+          <SortControl sort={sort} dir={dir} />
           {canAdd && (
             <Link
               href="/bills/new"
@@ -117,104 +225,19 @@ export default async function BillsPage({
         </div>
       </div>
 
-      {bills.length === 0 ? (
-        <p className="text-slate-500 dark:text-slate-400">
-          {showPaid ? 'No paid bills yet.' : 'No open bills.'}
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">
-                  {showPaid ? 'Paid date' : 'Due date'}
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Vendor</th>
-                <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">
-                  Invoice #
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">
-                  Category
-                </th>
-                <th className="px-4 py-2 text-right font-medium text-slate-600 dark:text-slate-400">
-                  Amount due
-                </th>
-                <th className="px-4 py-2 text-right font-medium text-slate-600 dark:text-slate-400">
-                  Balance
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">
-                  Split
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-slate-600 dark:text-slate-400">Status</th>
-                <th className="px-4 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {bills.map((b) => {
-                const { balance, lastPaidDate } = b
-                return (
-                  <tr key={b.id}>
-                    <td
-                      className={`px-4 py-2 whitespace-nowrap ${
-                        showPaid ? 'text-slate-700 dark:text-slate-300' : dueDateClass(b.dueDate)
-                      }`}
-                    >
-                      {showPaid
-                        ? (lastPaidDate?.toISOString().slice(0, 10) ?? '—')
-                        : b.dueDate.toISOString().slice(0, 10)}
-                    </td>
-                    <td className="px-4 py-2 text-slate-900 dark:text-slate-100">
-                      <Link href={`/bills/${b.id}`} className="hover:underline">
-                        {b.vendor}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-slate-600 dark:text-slate-400">{b.invoiceId}</td>
-                    <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
-                      {b.category.name}
-                      {b.subcategory ? ` / ${b.subcategory.name}` : ''}
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
-                      ${Number(b.amountDue).toFixed(2)}
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
-                      ${balance.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
-                      {splitMethodLabel[b.subcategory?.splitMethod ?? 'EQUAL']}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${statusPillClass[b.status]}`}
-                      >
-                        {statusLabel[b.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        {canAdd && b.status !== 'PAID' && (
-                          <Link
-                            href={`/bills/${b.id}#pay`}
-                            className="text-xs font-medium text-green-600 dark:text-green-500 hover:underline"
-                          >
-                            Pay
-                          </Link>
-                        )}
-                        <Link
-                          href={`/bills/${b.id}/edit`}
-                          className="text-xs font-medium text-indigo-600 hover:underline"
-                        >
-                          View
-                        </Link>
-                        {member.role === 'ADMIN' && <DeleteButton billId={b.id} />}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="space-y-8">
+        <section>
+          <h3 className="mb-3 text-lg font-semibold text-slate-900 dark:text-slate-100">Open bills</h3>
+          <BillsTable bills={openBills} showPaid={false} canAdd={canAdd} isAdmin={isAdmin} />
+        </section>
+
+        <hr className="border-slate-200 dark:border-slate-800" />
+
+        <section>
+          <h3 className="mb-3 text-lg font-semibold text-slate-900 dark:text-slate-100">Paid bills</h3>
+          <BillsTable bills={paidBills} showPaid={true} canAdd={canAdd} isAdmin={isAdmin} />
+        </section>
+      </div>
     </div>
   )
 }
