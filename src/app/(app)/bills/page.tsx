@@ -2,6 +2,10 @@ import Link from 'next/link'
 import { requireMember } from '@/lib/auth/dal'
 import { prisma } from '@/lib/prisma'
 import { DeleteButton } from './delete-button'
+import { SortControl } from './sort-control'
+
+const sortFields = ['due', 'amount', 'balance', 'category', 'vendor'] as const
+type SortField = (typeof sortFields)[number]
 
 const statusPillClass: Record<string, string> = {
   UNPAID: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400',
@@ -35,24 +39,56 @@ const splitMethodLabel: Record<string, string> = {
 export default async function BillsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; sort?: string; dir?: string }>
 }) {
-  const { status } = await searchParams
+  const { status, sort: sortParam, dir: dirParam } = await searchParams
   const showPaid = status === 'paid'
+  const sort: SortField = sortFields.includes(sortParam as SortField) ? (sortParam as SortField) : 'due'
+  const dir: 'asc' | 'desc' = dirParam === 'desc' ? 'desc' : 'asc'
   const member = await requireMember()
 
-  const bills = await prisma.bill.findMany({
+  const rawBills = await prisma.bill.findMany({
     where: {
       householdId: member.family.householdId,
       status: showPaid ? 'PAID' : { not: 'PAID' },
     },
-    orderBy: { dueDate: 'asc' },
     include: {
       category: true,
       subcategory: true,
       payments: { select: { amount: true, paidDate: true } },
     },
   })
+
+  const bills = rawBills
+    .map((b) => {
+      const paid = b.payments.reduce((sum, p) => sum + Number(p.amount), 0)
+      const balance = Math.round((Number(b.amountDue) - paid) * 100) / 100
+      const lastPaidDate = b.payments.reduce<Date | null>(
+        (latest, p) => (!latest || p.paidDate > latest ? p.paidDate : latest),
+        null
+      )
+      return { ...b, balance, lastPaidDate }
+    })
+    .sort((a, b) => {
+      let cmp = 0
+      switch (sort) {
+        case 'amount':
+          cmp = Number(a.amountDue) - Number(b.amountDue)
+          break
+        case 'balance':
+          cmp = a.balance - b.balance
+          break
+        case 'category':
+          cmp = a.category.name.localeCompare(b.category.name)
+          break
+        case 'vendor':
+          cmp = a.vendor.localeCompare(b.vendor)
+          break
+        default:
+          cmp = a.dueDate.getTime() - b.dueDate.getTime()
+      }
+      return dir === 'desc' ? -cmp : cmp
+    })
 
   const canAdd = member.role === 'ADMIN' || member.canAddExpenses
 
@@ -68,14 +104,17 @@ export default async function BillsPage({
             {showPaid ? '← Back to open bills' : 'View paid bills'}
           </Link>
         </div>
-        {canAdd && (
-          <Link
-            href="/bills/new"
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-          >
-            Add bill
-          </Link>
-        )}
+        <div className="flex items-center gap-4">
+          <SortControl sort={sort} dir={dir} showPaid={showPaid} />
+          {canAdd && (
+            <Link
+              href="/bills/new"
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            >
+              Add bill
+            </Link>
+          )}
+        </div>
       </div>
 
       {bills.length === 0 ? (
@@ -112,12 +151,7 @@ export default async function BillsPage({
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {bills.map((b) => {
-                const paid = b.payments.reduce((sum, p) => sum + Number(p.amount), 0)
-                const balance = Math.round((Number(b.amountDue) - paid) * 100) / 100
-                const lastPaidDate = b.payments.reduce<Date | null>(
-                  (latest, p) => (!latest || p.paidDate > latest ? p.paidDate : latest),
-                  null
-                )
+                const { balance, lastPaidDate } = b
                 return (
                   <tr key={b.id}>
                     <td

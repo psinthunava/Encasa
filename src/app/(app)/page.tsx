@@ -9,9 +9,29 @@ function monthBounds(date: Date) {
   return { start, end }
 }
 
-export default async function DashboardPage() {
+// "YYYY-MM" <-> a UTC date at the 1st of that month, for the ?month= query param.
+function parseMonthParam(month: string | undefined): Date {
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    const [year, m] = month.split('-').map(Number)
+    if (m >= 1 && m <= 12) return new Date(Date.UTC(year, m - 1, 1))
+  }
+  return new Date()
+}
+
+function monthParam(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>
+}) {
   const member = await requireMember()
-  const { start, end } = monthBounds(new Date())
+  const { month } = await searchParams
+  const { start, end } = monthBounds(parseMonthParam(month))
+  const prevMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1))
+  const nextMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1))
 
   const [balances, monthExpenses, monthBills] = await Promise.all([
     computeBalancesForPeriod(member.family.householdId, start, end),
@@ -48,7 +68,8 @@ export default async function DashboardPage() {
     date: Date
     href: string
     title: string
-    subtitle: string
+    label: 'Bill due' | 'Payment'
+    subtitleRest: string
     amount: number
   }
   const billItems: FeedItem[] = monthBills.map((b) => ({
@@ -56,7 +77,8 @@ export default async function DashboardPage() {
     date: b.dueDate,
     href: `/bills/${b.id}/edit`,
     title: b.vendor,
-    subtitle: `Bill due · ${b.category.name} · ${b.dueDate.toISOString().slice(0, 10)}`,
+    label: 'Bill due',
+    subtitleRest: `${b.category.name} · ${b.dueDate.toISOString().slice(0, 10)}`,
     amount: Number(b.amountDue),
   }))
   const paymentItems: FeedItem[] = monthExpenses.map((e) => ({
@@ -64,7 +86,8 @@ export default async function DashboardPage() {
     date: e.date,
     href: `/expenses/${e.id}/edit`,
     title: e.description,
-    subtitle: `Payment · ${e.category.name} · ${e.paidByFamily.name} · ${e.date.toISOString().slice(0, 10)}`,
+    label: 'Payment',
+    subtitleRest: `${e.category.name} · ${e.paidByFamily.name} · ${e.date.toISOString().slice(0, 10)}`,
     amount: Number(e.total),
   }))
   const billsAndPayments = [...billItems, ...paymentItems].sort(
@@ -73,9 +96,25 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-10">
-      <h1 className="text-center text-2xl font-bold text-slate-900 dark:text-slate-100">
-        {start.toLocaleString('default', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
-      </h1>
+      <div className="flex items-center justify-center gap-4">
+        <Link
+          href={`/?month=${monthParam(prevMonth)}`}
+          aria-label="Previous month"
+          className="rounded-md px-2 py-1 text-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        >
+          ←
+        </Link>
+        <h1 className="text-center text-2xl font-bold text-slate-900 dark:text-slate-100">
+          {start.toLocaleString('default', { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+        </h1>
+        <Link
+          href={`/?month=${monthParam(nextMonth)}`}
+          aria-label="Next month"
+          className="rounded-md px-2 py-1 text-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        >
+          →
+        </Link>
+      </div>
 
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
@@ -144,7 +183,18 @@ export default async function DashboardPage() {
                 <li key={item.id} className="flex items-center justify-between px-4 py-3 text-sm">
                   <div>
                     <p className="font-medium text-slate-900 dark:text-slate-100">{item.title}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{item.subtitle}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      <span
+                        className={
+                          item.label === 'Bill due'
+                            ? 'rounded bg-red-100 dark:bg-red-900/40 px-1 font-bold text-red-600 dark:text-red-400'
+                            : 'rounded bg-green-100 dark:bg-green-900/40 px-1 font-bold text-green-600 dark:text-green-400'
+                        }
+                      >
+                        {item.label}
+                      </span>{' '}
+                      · {item.subtitleRest}
+                    </p>
                   </div>
                   <Link
                     href={item.href}

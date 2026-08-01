@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useActionState } from 'react'
+import { useEffect, useMemo, useRef, useState, useActionState } from 'react'
 import Link from 'next/link'
 import type { BillFormState } from '@/lib/bills/actions'
 import { VendorCombobox } from '../expenses/vendor-combobox'
@@ -38,6 +38,12 @@ const splitMethodLabel: Record<SplitMethod, string> = {
 const defaultCategoryId = (categories: Category[]) => categories[0]?.id ?? ''
 const today = () => new Date().toISOString().slice(0, 10)
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function BillForm({
   categories,
   vendors,
@@ -57,9 +63,11 @@ export function BillForm({
 }) {
   const [state, formAction, pending] = useActionState<BillFormState, FormData>(action, undefined)
   const formRef = useRef<HTMLFormElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [categoryId, setCategoryId] = useState(initialValues?.categoryId ?? defaultCategoryId(categories))
   const [subcategoryId, setSubcategoryId] = useState(initialValues?.subcategoryId ?? '')
   const [vendor, setVendor] = useState(initialValues?.vendor ?? '')
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
 
   const category = useMemo(() => categories.find((c) => c.id === categoryId), [categories, categoryId])
   const subcategories = category?.subcategories ?? []
@@ -68,11 +76,31 @@ export function BillForm({
     [subcategories, subcategoryId]
   )
 
+  const previewUrls = useMemo(
+    () => selectedFiles.map((f) => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null)),
+    [selectedFiles]
+  )
+  useEffect(() => {
+    return () => previewUrls.forEach((url) => url && URL.revokeObjectURL(url))
+  }, [previewUrls])
+
+  function syncFileInput(files: File[]) {
+    const dataTransfer = new DataTransfer()
+    files.forEach((f) => dataTransfer.items.add(f))
+    if (fileInputRef.current) fileInputRef.current.files = dataTransfer.files
+    setSelectedFiles(files)
+  }
+
+  function handleRemoveFile(index: number) {
+    syncFileInput(selectedFiles.filter((_, i) => i !== index))
+  }
+
   function handleClearAll() {
     formRef.current?.reset()
     setCategoryId(defaultCategoryId(categories))
     setSubcategoryId('')
     setVendor('')
+    setSelectedFiles([])
   }
 
   return (
@@ -259,14 +287,54 @@ export function BillForm({
             Attach or scan bill (optional — JPEG, PNG, HEIC, or PDF, up to 10MB each)
           </label>
           <input
+            ref={fileInputRef}
             id="attachments"
             name="attachments"
             type="file"
             multiple
             accept="image/jpeg,image/png,image/heic,image/heif,application/pdf"
             capture="environment"
-            className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white`}
+            onChange={(e) => setSelectedFiles(Array.from(e.target.files ?? []))}
+            className={`${inputClass.replace('w-full', 'w-1/2')} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white`}
           />
+
+          {selectedFiles.length > 0 && (
+            <ul className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {selectedFiles.map((file, i) => (
+                <li
+                  key={`${file.name}-${file.lastModified}-${i}`}
+                  className="relative flex items-center gap-2 rounded-md border border-slate-200 dark:border-slate-800 p-2"
+                >
+                  {previewUrls[i] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={previewUrls[i]!}
+                      alt={file.name}
+                      className="h-10 w-10 shrink-0 rounded object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      PDF
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-slate-900 dark:text-slate-100">
+                      {file.name}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{formatFileSize(file.size)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFile(i)}
+                    aria-label={`Remove ${file.name}`}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-xs text-white hover:bg-red-600"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {state?.message && <p className="text-sm text-red-600">{state.message}</p>}
